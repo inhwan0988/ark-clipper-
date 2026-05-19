@@ -18,19 +18,33 @@ const MAC_LIB_FONTS = '/Library/Fonts';
 const MAC_USER_FONTS = `${os.homedir()}/Library/Fonts`;
 
 // 앱에 번들된 폰트 (모든 OS 공통, 항상 같은 결과 보장)
-// dev: <project>/public/fonts/, prod(Electron): resources/public/fonts/
+// dev: <project>/public/fonts/, prod(Electron): resources/app.asar.unpacked/public/fonts/
+// main.js가 ARC_FONTS_DIR 환경변수로 명시 전달 (가장 신뢰성 높음)
 const BUNDLED_FONTS_DIR = (() => {
-  // Electron 패키지된 앱이면 process.resourcesPath, 아니면 cwd
   const candidates = [
+    // 1순위: main.js에서 명시 전달한 절대경로 (Electron production)
+    process.env.ARC_FONTS_DIR,
+    // 2순위: dev (next dev) 또는 packaged app의 cwd 기반
     path.join(process.cwd(), 'public', 'fonts'),
-    path.join(process.cwd(), 'resources', 'public', 'fonts'),
+    // 3순위: Electron resources path (구버전 호환)
+    process.env.RESOURCES_PATH
+      ? path.join(process.env.RESOURCES_PATH, 'app.asar.unpacked', 'public', 'fonts')
+      : '',
     process.env.RESOURCES_PATH
       ? path.join(process.env.RESOURCES_PATH, 'public', 'fonts')
       : '',
-  ].filter(Boolean);
+  ].filter(Boolean) as string[];
   for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
+    try {
+      if (fs.existsSync(c)) {
+        console.log(`[fonts] BUNDLED_FONTS_DIR resolved: ${c}`);
+        return c;
+      }
+    } catch {
+      /* ignore */
+    }
   }
+  console.warn(`[fonts] BUNDLED_FONTS_DIR NOT FOUND. candidates: ${JSON.stringify(candidates)}`);
   return candidates[0];
 })();
 

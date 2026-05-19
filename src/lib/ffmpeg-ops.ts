@@ -185,6 +185,12 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
     if (opts.titleDrawtext && opts.titleDrawtext.text.trim()) {
       const t = opts.titleDrawtext;
       const fontPath = resolveFontFile(t.fontName, t.bold);
+      // 진단: 폰트 파일 실제 존재 여부 로그 (Windows에서 한글 □□□ 문제 추적)
+      const fontExists = fs.existsSync(fontPath);
+      console.log(`[drawtext] fontPath=${fontPath} (exists=${fontExists}, bold=${t.bold})`);
+      if (!fontExists) {
+        console.error(`[drawtext] ⚠️ FONT FILE NOT FOUND: ${fontPath}`);
+      }
       const fontFile = ffmpegEscapePath(fontPath);
       const maxUnits = maxUnitsForBox(t.boxWidth, t.fontSize);
       const lines = splitTitleLines(t.text, maxUnits).slice(0, 3);

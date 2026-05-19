@@ -52,11 +52,63 @@ async function startNextServer() {
 
   // ❗ Windows 호환성: fork()는 shebang script를 못 실행 (hashbang 무시).
   // spawn(process.execPath, ...)로 Electron binary를 Node.js처럼 사용 → Windows/Mac 모두 OK.
-  // 데이터/workspace 저장 위치를 userData로 (Windows에서 app.asar.unpacked는 권한 X)
-  // Mac: ~/Library/Application Support/Ark Clipper
-  // Windows: %APPDATA%/Ark Clipper
-  const userDataDir = app.getPath('userData');
+  // 데이터/workspace 저장 위치 결정.
+  // ⚠️ Windows에서 사용자 폴더 이름이 한국어(예: C:\Users\강인환)면
+  //    ffmpeg drawtext의 fontfile fopen이 실패함 → 한글 □□□.
+  //    Windows는 ASCII-only path인 C:\ProgramData\ArkClipper 사용.
+  // Mac/Linux는 userData 그대로 (한국어 path 거의 없음).
+  let userDataDir;
+  if (process.platform === 'win32') {
+    // C:\ProgramData\ArkClipper — 일반 사용자도 쓰기 가능, ASCII 보장
+    const programData = process.env.PROGRAMDATA || 'C:\\ProgramData';
+    userDataDir = path.join(programData, 'ArkClipper');
+    try {
+      fs.mkdirSync(userDataDir, { recursive: true });
+    } catch (e) {
+      // 권한 실패 시 userData로 fallback
+      logLine(`[fatal] ProgramData mkdir failed: ${e}. Falling back to userData.`);
+      userDataDir = app.getPath('userData');
+    }
+  } else {
+    userDataDir = app.getPath('userData');
+  }
   logLine(`userDataDir: ${userDataDir}`);
+
+  // 번들된 폰트를 ASCII-safe 위치에 복사 (한국어 path 회피)
+  const sourceFontsDir = path.join(appRoot, 'public', 'fonts');
+  const fontsDir = path.join(userDataDir, 'fonts');
+  try {
+    fs.mkdirSync(fontsDir, { recursive: true });
+    if (fs.existsSync(sourceFontsDir)) {
+      const files = fs.readdirSync(sourceFontsDir);
+      for (const f of files) {
+        const src = path.join(sourceFontsDir, f);
+        const dst = path.join(fontsDir, f);
+        // 이미 복사돼 있고 크기 같으면 skip
+        try {
+          const srcStat = fs.statSync(src);
+          const dstStat = fs.existsSync(dst) ? fs.statSync(dst) : null;
+          if (!dstStat || dstStat.size !== srcStat.size) {
+            fs.copyFileSync(src, dst);
+            logLine(`copied font: ${dst}`);
+          }
+        } catch (e) {
+          logLine(`font copy error for ${f}: ${e}`);
+        }
+      }
+    } else {
+      logLine(`⚠️ sourceFontsDir not found: ${sourceFontsDir}`);
+    }
+  } catch (e) {
+    logLine(`fonts dir setup error: ${e}`);
+  }
+  logLine(`fontsDir (ASCII-safe): ${fontsDir}`);
+  try {
+    const installed = fs.readdirSync(fontsDir);
+    logLine(`fonts installed: ${installed.join(', ')}`);
+  } catch {
+    /* ignore */
+  }
 
   nextProcess = spawn(process.execPath, [nextBin, 'start', '-p', String(port)], {
     cwd: appRoot,
@@ -64,8 +116,10 @@ async function startNextServer() {
     env: {
       ...process.env,
       NODE_ENV: 'production',
-      ELECTRON_RUN_AS_NODE: '1', // Electron을 일반 Node 처럼 실행
-      ARC_PORTABLE_ROOT: userDataDir, // 데이터/workspace 저장 위치
+      ELECTRON_RUN_AS_NODE: '1',
+      ARC_PORTABLE_ROOT: userDataDir,
+      ARC_FONTS_DIR: fontsDir, // 폰트 절대경로 명시 (한국어 폰트 보장)
+      RESOURCES_PATH: process.resourcesPath,
     },
   });
 
