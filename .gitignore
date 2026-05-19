@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Build outputs
+dist/
+build/
+
+# Sensitive
+.env
+.env.local
+.env*.local
+*.pem
+
+# User data (각 사용자 PC별)
+data/
+workspace/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
+
+# Temp
+.tmp/
+*.tmp
+
+# Electron
+out/
+release/
+
+# Type check cache
+*.tsbuildinfo
+next-env.d.ts

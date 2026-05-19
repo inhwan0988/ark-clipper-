@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+/* 앱에 번들된 한국어 폰트 — ffmpeg drawtext가 사용하는 ttf와 동일 파일 → 미리보기와 출력 완벽 일치 */
+@font-face {
+  font-family: 'Pretendard';
+  src: url('/fonts/Pretendard-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Pretendard';
+  src: url('/fonts/Pretendard-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+:root {
+  --background: #0a1428;
+  --foreground: #f5f7fa;
+  --brand-darkest: #0F2854;
+  --brand-dark: #1C4D8D;
+  --brand-mid: #4988C4;
+  --brand-soft: #BDE8F5;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html, body {
+  background: #0a1428 !important;
+  color: var(--foreground);
+  font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif;
+}

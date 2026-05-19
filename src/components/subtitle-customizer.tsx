@@ -1,0 +1,217 @@
+'use client';
+
+import { useState } from 'react';
+import { TEMPLATES } from '@/lib/subtitle-templates';
+
+export interface SubtitleStyle {
+  templateId: string;
+  fontName: string;
+  fontSize: number;
+  primaryColor: string;
+  outlineColor: string;
+  bold: boolean;
+}
+
+interface SubtitleCustomizerProps {
+  value: SubtitleStyle;
+  onChange: (style: SubtitleStyle) => void;
+}
+
+const FONTS = ['Pretendard', 'Noto Sans KR', 'Nanum Gothic', 'Malgun Gothic', 'Spoqa Han Sans Neo'];
+
+const PRESET_COLORS = [
+  { name: '흰색', hex: 'FFFFFF' },
+  { name: '노랑', hex: 'FFEB3B' },
+  { name: '연두', hex: 'B6FF59' },
+  { name: '하늘', hex: '40C4FF' },
+  { name: '핑크', hex: 'FF80AB' },
+  { name: '주황', hex: 'FF9100' },
+  { name: '검정', hex: '000000' },
+];
+
+export function SubtitleCustomizer({ value, onChange }: SubtitleCustomizerProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  function update(patch: Partial<SubtitleStyle>) {
+    onChange({ ...value, ...patch });
+  }
+
+  return (
+    <div className="bg-[#11203d] rounded-lg border border-[#1a2d4d] overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-[#243a5c]/40 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+          </svg>
+          <span className="text-white text-sm font-medium">자막 스타일</span>
+          <span className="text-gray-500 text-xs">
+            {TEMPLATES.find((t) => t.id === value.templateId)?.name || '클래식'} · {value.fontSize}px
+          </span>
+        </div>
+        <svg
+          className={`w-4 h-4 text-gray-600 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {expanded && (
+        <div className="px-4 py-4 space-y-4 border-t border-[#1a2d4d]">
+          {/* Templates */}
+          <div>
+            <label className="block text-gray-600 text-xs mb-2">템플릿</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {TEMPLATES.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => update({
+                    templateId: t.id,
+                    fontName: t.fontName,
+                    fontSize: t.fontSize,
+                    primaryColor: t.primaryColor,
+                    outlineColor: t.outlineColor,
+                    bold: t.bold,
+                  })}
+                  className={`p-2 rounded-lg border text-left transition-colors ${
+                    value.templateId === t.id
+                      ? 'border-[#4988C4] bg-[#4988C4]/10'
+                      : 'border-[#243a5c] bg-[#1a2d4d] hover:border-zinc-600'
+                  }`}
+                >
+                  <div className="text-white text-xs font-medium">{t.name}</div>
+                  <div className="text-gray-500 text-[10px] leading-tight mt-0.5">{t.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Font name */}
+          <div>
+            <label className="block text-gray-600 text-xs mb-1.5">글꼴</label>
+            <select
+              value={value.fontName}
+              onChange={(e) => update({ fontName: e.target.value })}
+              className="w-full px-3 py-2 bg-[#1a2d4d] border border-[#243a5c] rounded text-white text-sm focus:outline-none focus:border-[#4988C4]"
+            >
+              {FONTS.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Font size */}
+          <div>
+            <label className="flex justify-between items-center text-gray-600 text-xs mb-1.5">
+              <span>글자 크기</span>
+              <span className="text-white">{value.fontSize}px</span>
+            </label>
+            <input
+              type="range"
+              min={32} max={84} step={2}
+              value={value.fontSize}
+              onChange={(e) => update({ fontSize: parseInt(e.target.value) })}
+              className="w-full accent-[#4988C4]"
+            />
+          </div>
+
+          {/* Bold */}
+          <div className="flex items-center justify-between">
+            <label className="text-gray-600 text-xs">굵게</label>
+            <button
+              onClick={() => update({ bold: !value.bold })}
+              className={`relative w-10 h-6 rounded-full transition-colors ${
+                value.bold ? 'bg-[#4988C4]' : 'bg-[#243a5c]'
+              }`}
+            >
+              <div className={`absolute top-0.5 w-5 h-5 bg-[#0a1428] rounded-full transition-transform ${
+                value.bold ? 'translate-x-4' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </div>
+
+          {/* Primary color */}
+          <div>
+            <label className="block text-gray-600 text-xs mb-1.5">글자 색</label>
+            <div className="flex gap-2 flex-wrap">
+              {PRESET_COLORS.map((c) => (
+                <button
+                  key={c.hex}
+                  onClick={() => update({ primaryColor: c.hex })}
+                  title={c.name}
+                  className={`w-8 h-8 rounded border-2 transition-all ${
+                    value.primaryColor === c.hex ? 'border-[#4988C4] scale-110' : 'border-zinc-600'
+                  }`}
+                  style={{ backgroundColor: `#${c.hex}` }}
+                />
+              ))}
+              <input
+                type="color"
+                value={`#${value.primaryColor}`}
+                onChange={(e) => update({ primaryColor: e.target.value.replace('#', '').toUpperCase() })}
+                className="w-8 h-8 rounded border-2 border-zinc-600 bg-transparent cursor-pointer"
+                title="직접 선택"
+              />
+            </div>
+          </div>
+
+          {/* Outline color */}
+          <div>
+            <label className="block text-gray-600 text-xs mb-1.5">외곽선 색</label>
+            <div className="flex gap-2 flex-wrap">
+              {PRESET_COLORS.map((c) => (
+                <button
+                  key={c.hex}
+                  onClick={() => update({ outlineColor: c.hex })}
+                  title={c.name}
+                  className={`w-8 h-8 rounded border-2 transition-all ${
+                    value.outlineColor === c.hex ? 'border-[#4988C4] scale-110' : 'border-zinc-600'
+                  }`}
+                  style={{ backgroundColor: `#${c.hex}` }}
+                />
+              ))}
+              <input
+                type="color"
+                value={`#${value.outlineColor}`}
+                onChange={(e) => update({ outlineColor: e.target.value.replace('#', '').toUpperCase() })}
+                className="w-8 h-8 rounded border-2 border-zinc-600 bg-transparent cursor-pointer"
+                title="직접 선택"
+              />
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div>
+            <label className="block text-gray-600 text-xs mb-1.5">미리보기</label>
+            <div className="relative aspect-[9/16] bg-gradient-to-br from-zinc-700 to-zinc-900 rounded overflow-hidden flex items-end justify-center pb-8 max-h-48 mx-auto">
+              <div
+                style={{
+                  fontFamily: value.fontName,
+                  fontSize: `${value.fontSize / 4}px`,
+                  fontWeight: value.bold ? 700 : 400,
+                  color: `#${value.primaryColor}`,
+                  textShadow: `
+                    -1px -1px 0 #${value.outlineColor},
+                    1px -1px 0 #${value.outlineColor},
+                    -1px 1px 0 #${value.outlineColor},
+                    1px 1px 0 #${value.outlineColor},
+                    -2px 0 0 #${value.outlineColor},
+                    2px 0 0 #${value.outlineColor},
+                    0 -2px 0 #${value.outlineColor},
+                    0 2px 0 #${value.outlineColor}
+                  `,
+                }}
+                className="px-3 py-1 text-center"
+              >
+                자막 미리보기
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

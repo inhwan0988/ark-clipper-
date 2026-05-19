@@ -1,0 +1,62 @@
+import { NextResponse } from 'next/server';
+import { v4 as uuid } from 'uuid';
+import { createProject, listProjects, deleteProject, getProject } from '@/lib/db';
+import { projectDir, ensureDir, validateWorkspacePath } from '@/lib/paths';
+import fs from 'fs';
+
+export async function GET() {
+  const projects = listProjects();
+  return NextResponse.json(projects);
+}
+
+export async function POST(req: Request) {
+  const { youtube_url, workspace_path } = await req.json();
+
+  if (!youtube_url || !isValidYoutubeUrl(youtube_url)) {
+    return NextResponse.json({ error: '올바른 YouTube URL을 입력해주세요.' }, { status: 400 });
+  }
+
+  // 사용자 지정 저장 경로 검증
+  let validatedPath: string | null = null;
+  try {
+    validatedPath = validateWorkspacePath(workspace_path || '');
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid path' }, { status: 400 });
+  }
+
+  // 폴더 쓰기 가능 여부 확인 (지정된 경우만)
+  if (validatedPath) {
+    try {
+      ensureDir(validatedPath);
+    } catch {
+      return NextResponse.json({ error: `저장 폴더를 만들 수 없습니다: ${validatedPath}` }, { status: 400 });
+    }
+  }
+
+  const id = uuid();
+  ensureDir(projectDir(id, validatedPath));
+  const project = createProject(id, youtube_url, validatedPath);
+
+  return NextResponse.json(project);
+}
+
+export async function DELETE(req: Request) {
+  const { id } = await req.json();
+  if (!id) {
+    return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+  }
+
+  // 프로젝트의 실제 저장 경로로 파일 삭제
+  const project = getProject(id);
+  const dir = projectDir(id, project?.workspace_path);
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  deleteProject(id);
+  return NextResponse.json({ ok: true });
+}
+
+function isValidYoutubeUrl(url: string): boolean {
+  return /^https?:\/\/(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)/.test(url);
+}
