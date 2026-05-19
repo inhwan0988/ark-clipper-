@@ -65,13 +65,18 @@ export const PATHS = {
     process.env.ARC_YTDLP ||
     (() => {
       const binName = IS_WINDOWS ? 'yt-dlp.exe' : 'yt-dlp';
-      // Electron production: process.resourcesPath/bin/yt-dlp (Electron 전용 속성)
+      // 1) main.js가 RESOURCES_PATH 환경변수로 전달 (ELECTRON_RUN_AS_NODE 시에도 작동)
+      if (process.env.RESOURCES_PATH) {
+        const p = path.join(process.env.RESOURCES_PATH, 'bin', binName);
+        if (fs.existsSync(p)) return p;
+      }
+      // 2) Electron main 자체에서 실행 시 process.resourcesPath
       const electronProc = process as NodeJS.Process & { resourcesPath?: string };
       const resPath = electronProc.resourcesPath
         ? path.join(electronProc.resourcesPath, 'bin', binName)
         : null;
       if (resPath && fs.existsSync(resPath)) return resPath;
-      // dev / source 실행: 프로젝트 bin/yt-dlp
+      // 3) dev / source 실행: 프로젝트 bin/yt-dlp
       const localBin = path.join(BASE, 'bin', binName);
       if (fs.existsSync(localBin)) return localBin;
       return bundledYtdlp || localBin;
