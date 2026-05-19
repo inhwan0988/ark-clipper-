@@ -30,13 +30,31 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
-        env:
-          # youtube-dl-exec postinstall이 GitHub API로 yt-dlp binary 받는데
-          # 미인증 시 rate limit(60/h)에 막힘. GitHub Actions 토큰으로 인증.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm install --legacy-peer-deps --no-audit --no-fund
+      # youtube-dl-exec postinstall이 GitHub API(/repos/.../releases/latest)로
+      # yt-dlp 메타데이터를 받는데, fetch에 Authorization header를 안 붙여서
+      # GITHUB_TOKEN을 줘도 인증이 안 됨 → rate limit 60/h에 막힘.
+      # 해결: --ignore-scripts로 postinstall 전체 스킵 → yt-dlp binary는
+      # releases/latest/download/ URL로 직접 다운로드 (API 아님, rate limit 없음)
+      # → native 모듈(better-sqlite3)만 명시적으로 rebuild.
+      - name: Install dependencies (skip postinstall scripts)
+        run: npm install --legacy-peer-deps --no-audit --no-fund --ignore-scripts
+
+      - name: Pre-download yt-dlp binary
+        shell: bash
+        run: |
+          mkdir -p node_modules/youtube-dl-exec/bin
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            curl -fSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" \
+              -o "node_modules/youtube-dl-exec/bin/yt-dlp.exe"
+          else
+            curl -fSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" \
+              -o "node_modules/youtube-dl-exec/bin/yt-dlp"
+            chmod +x "node_modules/youtube-dl-exec/bin/yt-dlp"
+          fi
+          ls -la node_modules/youtube-dl-exec/bin/
+
+      - name: Rebuild native modules
+        run: npm rebuild better-sqlite3
 
       - name: Build Next.js
         run: npx next build --webpack
