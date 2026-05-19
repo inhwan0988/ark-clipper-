@@ -68,6 +68,17 @@ export function ApiStoragePathSettings() {
       );
       return;
     }
+    // 한국어/유니코드 경로 경고 — ffmpeg 일부 빌드가 처리 못함
+    const hasNonAscii = /[^\x20-\x7e]/.test(trimmed);
+    if (hasNonAscii) {
+      const ok = confirm(
+        '⚠️ 경로에 한국어 또는 특수문자가 포함되어 있습니다.\n\n' +
+          '일부 환경에서 영상 처리 중 폰트/자막 문제가 생길 수 있습니다.\n' +
+          '가능하면 영문 폴더(예: D:\\ARK_Shorts)를 권장합니다.\n\n' +
+          '그래도 이 경로로 저장할까요?',
+      );
+      if (!ok) return;
+    }
     setStoredStoragePath(trimmed);
     setSavedPath(trimmed);
     setManualInput('');
