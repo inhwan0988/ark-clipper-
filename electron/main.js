@@ -309,13 +309,14 @@ function setupAutoUpdater() {
   });
 
   updater.on('update-available', (info) => {
-    logLine(`[updater] new version: ${info && info.version} — downloading in background`);
+    const current = app.getVersion();
+    logLine(`[updater] new version: ${current} → ${info && info.version} — downloading in background`);
     // OS native toast 알림 (비침습) — 사용자가 다른 작업 중일 때도 알림
     if (Notification.isSupported()) {
       try {
         new Notification({
           title: '새 버전 다운로드 중',
-          body: `Ark Clipper v${info.version}을(를) 백그라운드에서 받고 있어요.`,
+          body: `v${current} → v${info.version}을(를) 백그라운드에서 받고 있어요.`,
           silent: true,
         }).show();
       } catch (e) {
@@ -325,7 +326,8 @@ function setupAutoUpdater() {
   });
 
   updater.on('update-downloaded', async (info) => {
-    logLine(`[updater] download complete: ${info && info.version}`);
+    const current = app.getVersion();
+    logLine(`[updater] download complete: ${current} → ${info && info.version}`);
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
     // 1. OS native toast 알림 (사용자가 앱에 포커스 안 줘도 인지 가능)
@@ -333,7 +335,7 @@ function setupAutoUpdater() {
       try {
         const notif = new Notification({
           title: '새 버전 준비 완료',
-          body: `v${info.version} — 클릭하면 지금 적용`,
+          body: `v${current} → v${info.version} — 클릭하면 지금 적용`,
         });
         notif.on('click', () => {
           if (mainWindow && !mainWindow.isDestroyed()) {
@@ -353,8 +355,10 @@ function setupAutoUpdater() {
     const choice = await dialog.showMessageBox(mainWindow, {
       type: 'info',
       title: '새 버전 준비 완료',
-      message: `Ark Clipper v${info.version} 다운로드가 완료되었습니다.`,
+      message: `Ark Clipper 업데이트가 준비됐어요`,
       detail:
+        `현재: v${current}\n` +
+        `새 버전: v${info.version}\n\n` +
         '지금 앱을 재시작하면 새 버전이 적용됩니다.\n' +
         '나중에 선택하면 다음 종료 시 자동 적용돼요.',
       buttons: ['지금 재시작', '나중에'],
