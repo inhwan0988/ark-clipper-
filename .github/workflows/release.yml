@@ -8,6 +8,10 @@ on:
   # 수동 실행도 허용
   workflow_dispatch:
 
+# electron-builder가 GitHub Release에 직접 publish하려면 contents:write 필요
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -133,44 +137,30 @@ jobs:
             next-dev.log
           retention-days: 7
 
+      # electron-builder --publish always → GitHub Release에 직접 업로드.
+      # latest.yml / latest-mac.yml / blockmap 파일 자동 생성 + 포함.
+      # 이게 있어야 사용자 PC의 electron-updater가 새 버전 자동 다운로드 가능.
       - name: Build Electron (Mac)
         if: matrix.name == 'mac'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npx electron-builder --mac --publish never
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --mac --publish always
 
       - name: Build Electron (Windows)
         if: matrix.name == 'win'
-        run: npx electron-builder --win --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always
 
-      - name: Upload artifacts
+      # 빌드 산출물 백업 (release 실패해도 다운로드 가능)
+      - name: Upload artifacts (backup)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}-build
-          path: ${{ matrix.artifact }}
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            artifacts/mac-build/*.dmg
-            artifacts/win-build/*.exe
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.yml
+            dist/*.blockmap

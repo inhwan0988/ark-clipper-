@@ -77,12 +77,20 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "perMachine": false
+      "perMachine": false,
+      "differentialPackage": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "inhwan0988",
+      "repo": "ark-clipper-",
+      "releaseType": "release"
     }
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
     "@sentry/electron": "^5.11.0",
+    "electron-updater": "^6.3.9",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@types/archiver": "^7.0.0",
     "archiver": "^7.0.1",

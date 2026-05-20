@@ -245,58 +245,80 @@ async function createWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
-  // 새 버전 체크 (production만, 비동기 fire-and-forget)
+  // electron-updater로 새 버전 자동 다운로드 + 알림 (production만).
   if (!isDev) {
     setTimeout(() => {
-      checkForUpdates().catch((e) => logLine(`[update-check] ${e && e.message ? e.message : e}`));
+      setupAutoUpdater();
     }, 3000);
   }
 }
 
 /**
- * GitHub Releases API로 최신 버전 확인 + 사용자에게 알림.
- * electron-updater 미사용 (publish 인프라 단순화). 사용자가 직접 다운로드.
+ * electron-updater 통합 — 백그라운드 자동 다운로드 + "재시작" 한 번 클릭으로 적용.
+ * Discord/VS Code 방식. 사용자가 다운로드/재설치 의식 안 함.
+ *
+ * package.json의 build.publish 설정으로 GitHub Releases 사용.
+ * release artifact에 latest.yml / latest-mac.yml 자동 포함되어야 함
+ * (electron-builder --publish always 또는 onTag 빌드 시 자동 생성).
  */
-async function checkForUpdates() {
-  const REPO = 'inhwan0988/ark-clipper-';
-  const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-    headers: { Accept: 'application/vnd.github.v3+json' },
+function setupAutoUpdater() {
+  let updater;
+  try {
+    const mod = require('electron-updater');
+    updater = mod.autoUpdater;
+  } catch (e) {
+    logLine(`[updater] electron-updater import failed: ${e && e.message ? e.message : e}`);
+    return;
+  }
+
+  // 로그 통합 — updater 내부 로그를 우리 logLine으로
+  updater.logger = {
+    info: (m) => logLine(`[updater] ${m}`),
+    warn: (m) => logLine(`[updater][warn] ${m}`),
+    error: (m) => logLine(`[updater][error] ${m}`),
+    debug: () => {},
+  };
+
+  // 자동 다운로드 ON, 자동 설치는 OFF (사용자 동의 후 재시작)
+  updater.autoDownload = true;
+  updater.autoInstallOnAppQuit = true;
+
+  updater.on('checking-for-update', () => logLine('[updater] checking...'));
+  updater.on('update-not-available', (info) => logLine(`[updater] up to date (${info && info.version})`));
+  updater.on('error', (err) => logLine(`[updater] error: ${err && err.message ? err.message : err}`));
+  updater.on('download-progress', (p) => {
+    logLine(`[updater] downloading ${p.percent.toFixed(1)}% (${(p.bytesPerSecond / 1024).toFixed(0)} KB/s)`);
   });
-  if (!res.ok) {
-    logLine(`[update-check] HTTP ${res.status}`);
-    return;
-  }
-  const latest = await res.json();
-  const latestTag = String(latest.tag_name || '').replace(/^v/, '');
-  const current = app.getVersion();
-  if (!latestTag || latestTag === current) {
-    logLine(`[update-check] up to date (${current})`);
-    return;
-  }
-  // semver 단순 비교 (major.minor.patch)
-  const toNums = (v) => v.split('.').map((n) => parseInt(n, 10) || 0);
-  const [lM, lm, lp] = toNums(latestTag);
-  const [cM, cm, cp] = toNums(current);
-  const isNewer = lM > cM || (lM === cM && lm > cm) || (lM === cM && lm === cm && lp > cp);
-  if (!isNewer) {
-    logLine(`[update-check] current=${current} latest=${latestTag} (not newer)`);
-    return;
-  }
-  logLine(`[update-check] new version available: ${current} → ${latestTag}`);
-  const choice = await dialog.showMessageBox(mainWindow, {
-    type: 'info',
-    title: '새 버전이 있습니다',
-    message: `Ark Clipper v${latestTag}이(가) 출시되었습니다.`,
-    detail:
-      `현재 버전: v${current}\n새 버전: v${latestTag}\n\n` +
-      '지금 다운로드 페이지를 여시겠어요?',
-    buttons: ['지금 다운로드', '나중에'],
-    defaultId: 0,
-    cancelId: 1,
+
+  updater.on('update-available', (info) => {
+    logLine(`[updater] new version: ${info && info.version} — downloading in background`);
   });
-  if (choice.response === 0) {
-    shell.openExternal(latest.html_url || `https://github.com/${REPO}/releases/latest`);
-  }
+
+  updater.on('update-downloaded', async (info) => {
+    logLine(`[updater] download complete: ${info && info.version}`);
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const choice = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: '새 버전 준비 완료',
+      message: `Ark Clipper v${info.version} 다운로드가 완료되었습니다.`,
+      detail:
+        '지금 앱을 재시작하면 새 버전이 적용됩니다.\n' +
+        '나중에 선택하면 다음 종료 시 자동 적용돼요.',
+      buttons: ['지금 재시작', '나중에'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (choice.response === 0) {
+      // 자식 프로세스 먼저 정리 후 quit + install
+      killNextProcessTree();
+      setImmediate(() => updater.quitAndInstall());
+    }
+  });
+
+  // 첫 체크 시작 (fire-and-forget)
+  updater.checkForUpdates().catch((e) => {
+    logLine(`[updater] initial check failed: ${e && e.message ? e.message : e}`);
+  });
 }
 
 app.whenReady().then(createWindow);
