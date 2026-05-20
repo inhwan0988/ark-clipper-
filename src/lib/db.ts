@@ -18,6 +18,8 @@ function getDb(): Database.Database {
     _db = new Database(PATHS.db);
     _db.pragma('journal_mode = WAL');
     _db.pragma('foreign_keys = ON');
+    // 동시 작업 시 DB lock 대기 (10초). race condition fail 방지.
+    _db.pragma('busy_timeout = 10000');
     migrate(_db);
   }
   return _db;

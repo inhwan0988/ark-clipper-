@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { v4 as uuid } from 'uuid';
 import { createProject, listProjects, deleteProject, getProject } from '@/lib/db';
-import { projectDir, ensureDir, validateWorkspacePath } from '@/lib/paths';
+import { projectDir, ensureDir, validateWorkspacePath, PATHS } from '@/lib/paths';
+import { checkDiskSpace } from '@/lib/disk-space';
 import fs from 'fs';
 
 export async function GET() {
@@ -24,13 +25,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid path' }, { status: 400 });
   }
 
-  // 폴더 쓰기 가능 여부 확인 (지정된 경우만)
+  // 폴더 쓰기 가능 여부 확인 (지정된 경우만) + write 권한 사전 테스트
   if (validatedPath) {
     try {
       ensureDir(validatedPath);
-    } catch {
-      return NextResponse.json({ error: `저장 폴더를 만들 수 없습니다: ${validatedPath}` }, { status: 400 });
+      // write 권한 테스트 (실제로 작은 파일 생성/삭제)
+      const testFile = `${validatedPath}/.arc-write-test-${Date.now()}`;
+      fs.writeFileSync(testFile, 'ok');
+      fs.unlinkSync(testFile);
+    } catch (e) {
+      return NextResponse.json(
+        {
+          error:
+            `저장 폴더에 쓰기 권한이 없습니다: ${validatedPath}\n` +
+            '관리자 권한이 필요한 폴더이거나 다른 프로그램이 잠갔을 수 있어요. ' +
+            '다른 폴더(예: D:\\ARK_Shorts)를 선택해주세요.',
+        },
+        { status: 400 },
+      );
+      void e;
     }
+  }
+
+  // 디스크 공간 사전 체크 (영상 다운로드 + 처리 합산 5GB 이상 권장)
+  const checkPath = validatedPath || PATHS.workspace;
+  const diskCheck = checkDiskSpace(checkPath, 5000);
+  if (!diskCheck.ok) {
+    return NextResponse.json({ error: diskCheck.message }, { status: 400 });
   }
 
   const id = uuid();

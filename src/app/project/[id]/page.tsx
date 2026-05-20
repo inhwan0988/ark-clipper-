@@ -139,6 +139,31 @@ export default function ProjectPage() {
     }
   }, [project?.status, loadHooks, loadClips]);
 
+  // 클립 생성 완료 시 OS native 알림.
+  // 사용자가 다른 작업 중일 때도 완료 인지 가능 (영상 처리는 보통 5-10분 소요).
+  useEffect(() => {
+    if (phase !== 'complete') return;
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    const show = () => {
+      if (Notification.permission === 'granted') {
+        try {
+          new Notification('Ark Clipper', {
+            body: `클립 생성 완료! 다운로드 준비됐어요 🎉`,
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    if (Notification.permission === 'granted') {
+      show();
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then((perm) => {
+        if (perm === 'granted') show();
+      }).catch(() => {});
+    }
+  }, [phase]);
+
   // 단계별 에러 메시지를 명확히 표시하는 안전한 fetch
   async function safeFetch(url: string, init: RequestInit, stepLabel: string) {
     let res: Response;

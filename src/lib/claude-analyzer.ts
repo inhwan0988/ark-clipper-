@@ -135,7 +135,8 @@ export async function analyzeHooks(
     throw new Error('Anthropic API 키가 설정되지 않았습니다. 홈 화면에서 API 키를 입력해주세요.');
   }
   const targetCount = Math.max(1, Math.min(10, Math.round(clipCount)));
-  const client = new Anthropic({ apiKey: apiKey.trim() });
+  // maxRetries 5 + 5분 timeout — 일시적 네트워크/5xx 에러 자동 재시도.
+  const client = new Anthropic({ apiKey: apiKey.trim(), maxRetries: 5, timeout: 300_000 });
   const pp = getProjectPaths(projectId);
 
   updateProject(projectId, { status: 'analyzing' });

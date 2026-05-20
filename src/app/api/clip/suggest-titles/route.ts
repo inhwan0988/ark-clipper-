@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: '스크립트가 비어있습니다.' }, { status: 400 });
   }
 
-  const client = new Anthropic({ apiKey: apiKey.trim() });
+  const client = new Anthropic({ apiKey: apiKey.trim(), maxRetries: 5, timeout: 120_000 });
   const prompt = `너는 한국어 쇼츠 영상의 후킹 제목을 작성하는 전문가다.
 
 아래는 한 쇼츠 클립(약 30~60초)의 실제 음성 스크립트다:

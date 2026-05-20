@@ -93,7 +93,9 @@ export async function transcribe(
     message: `Whisper API 호출 중... (${mp3SizeMb.toFixed(1)}MB)`,
   });
 
-  const client = new OpenAI({ apiKey: openaiApiKey });
+  // maxRetries 5 + 10분 timeout — 큰 파일 업로드 + 일시적 네트워크 에러 대응.
+  // 기본 2회 재시도로는 부족했음 (외부 사용자 보고 사례).
+  const client = new OpenAI({ apiKey: openaiApiKey, maxRetries: 5, timeout: 600_000 });
 
   let transcription;
   try {

@@ -30,6 +30,10 @@ export async function downloadVideo(projectId: string, url: string): Promise<{ t
       '--newline',
       '--progress',
       '--no-warnings',
+      // 일시적 네트워크 에러 자동 재시도 (HTTP 5xx, connection reset 등)
+      '--retries', '5',
+      '--fragment-retries', '5',
+      '--socket-timeout', '30',
       url,
     ];
 
