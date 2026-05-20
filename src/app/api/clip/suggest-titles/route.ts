@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { createWithFallback } from '@/lib/claude-models';
 
 export async function POST(req: Request) {
   const apiKey = req.headers.get('x-api-key') || process.env.ANTHROPIC_API_KEY || '';
@@ -40,8 +41,7 @@ JSON 형식으로만 응답해라. 다른 텍스트는 절대 포함하지 마�
 }`;
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-opus-4-7',
+    const response = await createWithFallback(client, {
       max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }],
     });

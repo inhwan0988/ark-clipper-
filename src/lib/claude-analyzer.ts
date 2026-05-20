@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { emitProgress } from './progress-bus';
 import { updateProject, getProjectPaths } from './db';
+import { createWithFallback } from './claude-models';
 import fs from 'fs';
 import type { Transcript, HookSuggestion } from '@/types';
 
@@ -156,8 +157,7 @@ export async function analyzeHooks(
 
   let response;
   try {
-    response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    response = await createWithFallback(client, {
       max_tokens: 4096,
       temperature: 1.0,
       system: buildSystemPrompt(targetCount),
