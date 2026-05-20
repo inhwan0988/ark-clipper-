@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, dialog } = require('electron');
+const { app, BrowserWindow, shell, dialog, Notification } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const net = require('net');
@@ -263,10 +263,11 @@ async function createWindow() {
   }
 
   // electron-updater로 새 버전 자동 다운로드 + 알림 (production만).
+  // 1초 후 첫 체크 + 이후 1시간마다 주기 체크 (앱 켜놔도 새 버전 감지).
   if (!isDev) {
     setTimeout(() => {
       setupAutoUpdater();
-    }, 3000);
+    }, 1000);
   }
 }
 
@@ -309,11 +310,46 @@ function setupAutoUpdater() {
 
   updater.on('update-available', (info) => {
     logLine(`[updater] new version: ${info && info.version} — downloading in background`);
+    // OS native toast 알림 (비침습) — 사용자가 다른 작업 중일 때도 알림
+    if (Notification.isSupported()) {
+      try {
+        new Notification({
+          title: '새 버전 다운로드 중',
+          body: `Ark Clipper v${info.version}을(를) 백그라운드에서 받고 있어요.`,
+          silent: true,
+        }).show();
+      } catch (e) {
+        logLine(`[updater] notification error: ${e && e.message ? e.message : e}`);
+      }
+    }
   });
 
   updater.on('update-downloaded', async (info) => {
     logLine(`[updater] download complete: ${info && info.version}`);
     if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    // 1. OS native toast 알림 (사용자가 앱에 포커스 안 줘도 인지 가능)
+    if (Notification.isSupported()) {
+      try {
+        const notif = new Notification({
+          title: '새 버전 준비 완료',
+          body: `v${info.version} — 클릭하면 지금 적용`,
+        });
+        notif.on('click', () => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.show();
+            mainWindow.focus();
+          }
+          killNextProcessTree();
+          setImmediate(() => updater.quitAndInstall());
+        });
+        notif.show();
+      } catch (e) {
+        logLine(`[updater] notification error: ${e && e.message ? e.message : e}`);
+      }
+    }
+
+    // 2. 다이얼로그 (사용자가 앱에 포커스 줘 있으면 명시적 확인)
     const choice = await dialog.showMessageBox(mainWindow, {
       type: 'info',
       title: '새 버전 준비 완료',
@@ -332,10 +368,20 @@ function setupAutoUpdater() {
     }
   });
 
-  // 첫 체크 시작 (fire-and-forget)
+  // 첫 체크 (앱 시작 시 1회)
   updater.checkForUpdates().catch((e) => {
     logLine(`[updater] initial check failed: ${e && e.message ? e.message : e}`);
   });
+
+  // 주기 체크 — 1시간마다. 앱을 계속 켜놓는 사용자도 새 버전을 놓치지 않음.
+  setInterval(
+    () => {
+      updater.checkForUpdates().catch((e) => {
+        logLine(`[updater] periodic check failed: ${e && e.message ? e.message : e}`);
+      });
+    },
+    60 * 60 * 1000,
+  );
 }
 
 app.whenReady().then(createWindow);
