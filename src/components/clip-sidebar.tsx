@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import type { Clip, HookSuggestion } from '@/types';
+import { triggerDownload } from '@/lib/trigger-download';
 
 interface Props {
   clips: Clip[];
@@ -55,7 +56,7 @@ export function ClipSidebar({
   }
 
   function downloadAll() {
-    window.location.href = `/api/projects/download-zip?projectId=${projectId}`;
+    triggerDownload(`/api/projects/download-zip?projectId=${projectId}`);
   }
   function openFolder() {
     fetch('/api/projects/open-folder', {
@@ -65,7 +66,7 @@ export function ClipSidebar({
     });
   }
   function downloadOne(clipId: string) {
-    window.location.href = `/api/projects/download?clipId=${clipId}`;
+    triggerDownload(`/api/projects/download?clipId=${clipId}`);
   }
 
   return (

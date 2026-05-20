@@ -241,6 +241,23 @@ async function createWindow() {
     return { action: 'deny' };
   });
 
+  // /api/* URL로의 페이지 navigation 차단 (다운로드는 a[download]로만 트리거).
+  // 이전 버그: window.location.href = '/api/projects/download' 패턴이
+  // Electron Chromium에서 페이지 자체를 navigate해서 검정 화면 + DevTools
+  // source view가 뜨던 문제. 클라이언트 코드는 a 태그로 fix했지만,
+  // defense-in-depth 차원에서 main에서도 차단.
+  mainWindow.webContents.on('will-navigate', (event, navUrl) => {
+    try {
+      const parsed = new URL(navUrl);
+      if (parsed.pathname.startsWith('/api/')) {
+        event.preventDefault();
+        logLine(`[nav] blocked navigation to API endpoint: ${navUrl}`);
+      }
+    } catch {
+      /* ignore parse errors */
+    }
+  });
+
   if (isDev) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }

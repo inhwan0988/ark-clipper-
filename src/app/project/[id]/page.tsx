@@ -8,6 +8,7 @@ import { OutputGallery } from '@/components/output-gallery';
 import { ClipEditorV2 } from '@/components/clip-editor-v2';
 import { ClipSidebar } from '@/components/clip-sidebar';
 import { getStoredApiKey, getStoredOpenAiKey } from '@/components/api-key-settings';
+import { triggerDownload } from '@/lib/trigger-download';
 import type { ClipCustomization } from '@/components/clip-customizer';
 import type { Project, Clip, HookSuggestion, Transcript } from '@/types';
 
@@ -584,7 +585,7 @@ export default function ProjectPage() {
                         }
                       }
                       if (matched?.id) {
-                        window.location.href = `/api/projects/download?clipId=${matched.id}`;
+                        triggerDownload(`/api/projects/download?clipId=${matched.id}`);
                       } else {
                         setError('다운로드할 클립을 찾을 수 없습니다. 재생성 후 다시 시도해주세요.');
                       }

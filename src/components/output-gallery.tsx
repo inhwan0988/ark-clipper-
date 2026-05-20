@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Clip, HookSuggestion } from '@/types';
+import { triggerDownload } from '@/lib/trigger-download';
 
 interface OutputGalleryProps {
   clips: Clip[];
@@ -99,11 +100,11 @@ export function OutputGallery({
     completedClips.find((c) => c.id === selectedClipId) ?? completedClips[0];
 
   function downloadOne(clipId: string) {
-    window.location.href = `/api/projects/download?clipId=${clipId}`;
+    triggerDownload(`/api/projects/download?clipId=${clipId}`);
   }
 
   function downloadAll() {
-    window.location.href = `/api/projects/download-zip?projectId=${projectId}`;
+    triggerDownload(`/api/projects/download-zip?projectId=${projectId}`);
   }
 
   function openFolder() {
