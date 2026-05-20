@@ -154,24 +154,44 @@ export async function analyzeHooks(
     .map((seg) => `[${formatTime(seg.start)} - ${formatTime(seg.end)}] ${seg.text}`)
     .join('\n');
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
-    temperature: 1.0,
-    system: buildSystemPrompt(targetCount),
-    messages: [
-      {
-        role: 'user',
-        content: `다음은 유튜브 영상의 전사 텍스트입니다. 쇼츠로 만들기 좋은 후킹 구간을 찾아주세요.\n\n영상 길이: ${formatTime(transcript.duration)}\n\n전사:\n${transcriptText}\n\n⚠️ 반드시 지켜야 할 조건:\n1. 정확히 ${targetCount}개의 후킹 구간만 선택\n2. 각 구간은 반드시 30초 이상, 90초 이하\n3. **quote는 해당 start_time ~ end_time 구간 안에 실제로 등장하는 transcript 문장을 정확히 인용**\n4. **title은 quote와 의미가 일치하는 후킹 카피** (다른 구간 내용 절대 금지)\n5. 모든 제목은 Tier S 또는 Tier A 패턴 사용\n6. JSON 배열만 출력`,
-      },
-    ],
-  });
+  let response;
+  try {
+    response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      temperature: 1.0,
+      system: buildSystemPrompt(targetCount),
+      messages: [
+        {
+          role: 'user',
+          content: `다음은 유튜브 영상의 전사 텍스트입니다. 쇼츠로 만들기 좋은 후킹 구간을 찾아주세요.\n\n영상 길이: ${formatTime(transcript.duration)}\n\n전사:\n${transcriptText}\n\n⚠️ 반드시 지켜야 할 조건:\n1. 정확히 ${targetCount}개의 후킹 구간만 선택\n2. 각 구간은 반드시 30초 이상, 90초 이하\n3. **quote는 해당 start_time ~ end_time 구간 안에 실제로 등장하는 transcript 문장을 정확히 인용**\n4. **title은 quote와 의미가 일치하는 후킹 카피** (다른 구간 내용 절대 금지)\n5. 모든 제목은 Tier S 또는 Tier A 패턴 사용\n6. JSON 배열만 출력`,
+        },
+      ],
+    });
+  } catch (err) {
+    // Anthropic SDK 에러 분류 → 사용자 친화 메시지
+    const e = err as { status?: number; message?: string };
+    console.error('[claude] Anthropic API error:', e.status, e.message);
+    if (e.status === 401) {
+      throw new Error('Anthropic API 키가 잘못되었습니다. 우상단 설정에서 다시 확인해주세요.');
+    }
+    if (e.status === 429) {
+      throw new Error('Anthropic 사용량 한도에 도달했어요. 잠시 후 다시 시도하거나 console.anthropic.com에서 결제 정보를 확인해주세요.');
+    }
+    if (e.status === 529) {
+      throw new Error('Anthropic 서버가 과부하 상태입니다. 잠시 후 다시 시도해주세요.');
+    }
+    if (typeof e.status === 'number' && e.status >= 500) {
+      throw new Error('Anthropic 서버에 일시적 문제가 있어요. 잠시 후 다시 시도해주세요.');
+    }
+    throw new Error(`AI 분석 중 오류가 발생했습니다: ${e.message || '알 수 없는 오류'}`);
+  }
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '';
 
   const jsonMatch = text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
-    throw new Error('Claude response did not contain valid JSON array');
+    throw new Error('AI 분석 응답을 해석하지 못했어요. 다시 시도해주세요.');
   }
 
   const rawHooks: HookSuggestion[] = JSON.parse(jsonMatch[0]);

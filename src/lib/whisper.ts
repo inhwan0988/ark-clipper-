@@ -33,15 +33,17 @@ async function compressToMp3(
     proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
     proc.on('close', (code) => {
       if (code !== 0) {
+        const userMessage = '오디오 압축에 실패했습니다. 영상 파일이 손상되었거나 디스크 공간이 부족할 수 있어요.';
         emitProgress({
           projectId,
           step: 'transcribe',
           status: 'error',
           progress: 0,
-          message: '오디오 압축 실패',
+          message: userMessage,
           detail: stderr.slice(-300),
         });
-        reject(new Error(`mp3 compression failed (exit ${code}): ${stderr.slice(-300)}`));
+        console.error(`[whisper.compress] failed (code ${code}):`, stderr.slice(-500));
+        reject(new Error(userMessage));
         return;
       }
       resolve();
@@ -93,13 +95,33 @@ export async function transcribe(
 
   const client = new OpenAI({ apiKey: openaiApiKey });
 
-  const transcription = await client.audio.transcriptions.create({
-    file: fs.createReadStream(pp.audioMp3),
-    model: 'whisper-1',
-    language: 'ko',
-    response_format: 'verbose_json',
-    timestamp_granularities: ['word', 'segment'],
-  });
+  let transcription;
+  try {
+    transcription = await client.audio.transcriptions.create({
+      file: fs.createReadStream(pp.audioMp3),
+      model: 'whisper-1',
+      language: 'ko',
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word', 'segment'],
+    });
+  } catch (err) {
+    // OpenAI SDK 에러 분류 → 사용자 친화 메시지
+    const e = err as { status?: number; message?: string; code?: string };
+    console.error('[whisper] OpenAI API error:', e.status, e.message);
+    if (e.status === 401) {
+      throw new Error('OpenAI API 키가 잘못되었습니다. 우상단 설정에서 다시 확인해주세요.');
+    }
+    if (e.status === 429) {
+      throw new Error('OpenAI 사용량 한도에 도달했어요. 잠시 후 다시 시도하거나 OpenAI 대시보드에서 결제 정보를 확인해주세요.');
+    }
+    if (e.status === 413) {
+      throw new Error('오디오 파일이 너무 큽니다. 영상 길이를 줄여주세요.');
+    }
+    if (typeof e.status === 'number' && e.status >= 500) {
+      throw new Error('OpenAI 서버에 일시적 문제가 있어요. 잠시 후 다시 시도해주세요.');
+    }
+    throw new Error(`음성 인식 중 오류가 발생했습니다: ${e.message || '알 수 없는 오류'}`);
+  }
 
   emitProgress({
     projectId,
