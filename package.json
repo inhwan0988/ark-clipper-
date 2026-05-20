@@ -1,6 +1,6 @@
 {
   "name": "arc-clipper",
-  "version": "0.2.0",
+  "version": "0.2.6",
   "private": true,
   "main": "electron/main.js",
   "scripts": {

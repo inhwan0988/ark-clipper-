@@ -170,12 +170,19 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
     // 자막 + 채널명을 ASS 파일 하나로 burn-in (title은 drawtext로 별도 처리)
     if (opts.subtitlePath && fs.existsSync(opts.subtitlePath)) {
       const escapedPath = ffmpegEscapePath(opts.subtitlePath);
-      const fontsdir =
+      // ARC_FONTS_DIR(번들된 Pretendard 등)을 우선 사용해야 ASS가 한글 폰트를 찾음.
+      // Windows에서 시스템 폰트 폴더만 가리키면 ASS가 Pretendard fontfamily를 못 찾아 □□□.
+      const bundledFontsDir = process.env.ARC_FONTS_DIR;
+      const systemFontsDir =
         process.platform === 'darwin'
           ? '/System/Library/Fonts'
           : process.platform === 'win32'
-            ? 'C\\:/Windows/Fonts'
+            ? 'C:/Windows/Fonts'
             : '/usr/share/fonts';
+      const fontsdirRaw = bundledFontsDir && fs.existsSync(bundledFontsDir)
+        ? bundledFontsDir
+        : systemFontsDir;
+      const fontsdir = ffmpegEscapePath(fontsdirRaw);
       vf += `,subtitles='${escapedPath}':fontsdir='${fontsdir}':charenc=UTF-8`;
     }
 
