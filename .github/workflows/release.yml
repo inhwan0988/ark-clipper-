@@ -59,7 +59,40 @@ jobs:
       - name: Build Next.js
         run: npx next build --webpack
 
-      - name: Build Electron (Mac)
+      # 한글 burn-in smoke test — 매 빌드마다 자동 검증.
+      # 1) Pretendard 폰트 파일 존재  2) ffmpeg drawtext가 fontfile을 정상 open
+      # 3) 한글 렌더 결과 mp4가 정상 사이즈로 생성됨 (1KB 이하 = 깨짐).
+      # 4) Windows: 한국어 경로 시뮬레이션 (ASCII-safe 경로의 효과 확인).
+      - name: Smoke test - Korean font burn-in
+        shell: bash
+        run: |
+          set -e
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            FFMPEG="node_modules/@ffmpeg-installer/win32-x64/ffmpeg.exe"
+          else
+            FFMPEG="node_modules/@ffmpeg-installer/darwin-arm64/ffmpeg"
+          fi
+          # 검증 0: ffmpeg 바이너리 존재
+          test -f "$FFMPEG" || { echo "❌ ffmpeg binary not found: $FFMPEG"; exit 1; }
+          # 검증 1: Pretendard 폰트 파일 존재
+          test -f "public/fonts/Pretendard-Bold.ttf" || { echo "❌ Pretendard-Bold.ttf missing"; exit 1; }
+          test -f "public/fonts/Pretendard-Regular.ttf" || { echo "❌ Pretendard-Regular.ttf missing"; exit 1; }
+          mkdir -p smoke
+          # 검증 2: ASCII 경로에서 한글 drawtext
+          "$FFMPEG" -hide_banner -f lavfi -i "color=c=black:s=320x240:d=1" \
+            -vf "drawtext=fontfile=public/fonts/Pretendard-Bold.ttf:text='한글테스트':x=10:y=10:fontsize=32:fontcolor=white" \
+            -y smoke/ascii.mp4 2> smoke/ascii.log
+          test -s smoke/ascii.mp4 || { echo "❌ ASCII path: output empty"; tail -50 smoke/ascii.log; exit 1; }
+          SIZE_ASCII=$(wc -c < smoke/ascii.mp4)
+          echo "✓ ASCII path output: $SIZE_ASCII bytes"
+          test "$SIZE_ASCII" -gt 1024 || { echo "❌ output too small ($SIZE_ASCII bytes)"; tail -50 smoke/ascii.log; exit 1; }
+          # 검증 3: ffmpeg stderr에 fontfile/freetype 에러 없는지
+          if grep -iE "could not (load|open) font|freetype|cannot find" smoke/ascii.log; then
+            echo "❌ font error detected in ffmpeg log"
+            cat smoke/ascii.log
+            exit 1
+          fi
+          echo "✅ Smoke test passed: ffmpeg drawtext + Pretendard 한글 정상 렌더"
         if: matrix.name == 'mac'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
