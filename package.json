@@ -14,7 +14,10 @@
     "prebuild:native:mac:arm64": "cd node_modules/better-sqlite3 && npx prebuild-install --runtime=electron --target=33.4.11 --arch=arm64 --platform=darwin --download",
     "electron:mac": "npm run prebuild:native:mac:arm64 && next build --webpack && electron-builder --mac --config.npmRebuild=false",
     "electron:win": "npm run prebuild:native:win && next build --webpack && electron-builder --win --config.npmRebuild=false",
-    "electron:all": "npm run electron:mac && npm run prebuild:native:win && electron-builder --win --config.npmRebuild=false"
+    "electron:all": "npm run electron:mac && npm run prebuild:native:win && electron-builder --win --config.npmRebuild=false",
+    "release:patch": "npm version patch -m 'release v%s' && git push origin main && git push origin --tags",
+    "release:minor": "npm version minor -m 'release v%s' && git push origin main && git push origin --tags",
+    "release:major": "npm version major -m 'release v%s' && git push origin main && git push origin --tags"
   },
   "build": {
     "appId": "com.arkstudio.arkclipper",
