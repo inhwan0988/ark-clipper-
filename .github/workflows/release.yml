@@ -93,6 +93,44 @@ jobs:
             exit 1
           fi
           echo "✅ Smoke test passed: ffmpeg drawtext + Pretendard 한글 정상 렌더"
+
+      # E2E test — Electron 앱 source launch + 메인 윈도우 로드 자동 검증.
+      # next dev 서버를 백그라운드로 띄우고 electron source로 launch (production .exe 아님).
+      # 실제 production 한글 폰트 fix는 위 smoke test에서 검증. 이건 UI launch 자체.
+      - name: Install Playwright (no browsers — Electron만 사용)
+        run: npx playwright install-deps || true
+
+      - name: Start Next dev server (background)
+        shell: bash
+        run: |
+          npx next dev --port 3000 > next-dev.log 2>&1 &
+          echo "NEXT_PID=$!" >> $GITHUB_ENV
+          npx wait-on http://localhost:3000 --timeout 120000
+
+      - name: Run E2E tests (Electron launch)
+        shell: bash
+        run: npx playwright test
+        continue-on-error: true  # E2E가 불안정해도 빌드는 계속 (점진적 도입)
+
+      - name: Stop Next dev server
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "$NEXT_PID" ]; then
+            kill "$NEXT_PID" 2>/dev/null || true
+          fi
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.name }}
+          path: |
+            playwright-report/
+            next-dev.log
+          retention-days: 7
+
+      - name: Build Electron (Mac)
         if: matrix.name == 'mac'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false

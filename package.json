@@ -17,7 +17,8 @@
     "electron:all": "npm run electron:mac && npm run prebuild:native:win && electron-builder --win --config.npmRebuild=false",
     "release:patch": "npm version patch -m 'release v%s' && git push origin main && git push origin --tags",
     "release:minor": "npm version minor -m 'release v%s' && git push origin main && git push origin --tags",
-    "release:major": "npm version major -m 'release v%s' && git push origin main && git push origin --tags"
+    "release:major": "npm version major -m 'release v%s' && git push origin main && git push origin --tags",
+    "test:e2e": "playwright test"
   },
   "build": {
     "appId": "com.arkstudio.arkclipper",
@@ -81,6 +82,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
+    "@sentry/electron": "^5.11.0",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@types/archiver": "^7.0.0",
     "archiver": "^7.0.1",
@@ -102,6 +104,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/uuid": "^10.0.0",
+    "@playwright/test": "^1.49.0",
     "concurrently": "^9.2.1",
     "electron": "^33.4.11",
     "electron-builder": "^26.8.1",

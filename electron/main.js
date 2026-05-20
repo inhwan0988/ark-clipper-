@@ -4,6 +4,25 @@ const { spawn } = require('child_process');
 const net = require('net');
 const fs = require('fs');
 
+// Sentry — 사용자 PC에서 발생한 에러 자동 수집. DSN 없으면 no-op (개발자 환경).
+// 빌드 시점에 SENTRY_DSN 환경변수 또는 코드에 하드코딩 (client DSN은 public이라도 OK).
+// 사용 절차: sentry.io 가입 → Project (Electron) 생성 → DSN 복사 → 아래 상수 교체.
+const SENTRY_DSN = process.env.SENTRY_DSN || ''; // 예: 'https://abc123@o123.ingest.sentry.io/456'
+if (SENTRY_DSN) {
+  try {
+    const Sentry = require('@sentry/electron/main');
+    Sentry.init({
+      dsn: SENTRY_DSN,
+      environment: `${process.platform}-${process.arch}`,
+      release: require('../package.json').version,
+      // 사용자 데이터/영상 내용은 전송 X. 스택트레이스 + OS/앱버전만.
+      sendDefaultPii: false,
+    });
+  } catch (e) {
+    console.error('[Sentry] init failed:', e);
+  }
+}
+
 const isDev = !app.isPackaged;
 
 let mainWindow;
