@@ -28,15 +28,50 @@ const isDev = !app.isPackaged;
 let mainWindow;
 let nextProcess;
 let logStream;
+let logFilePath; // 로그 파일 절대경로 (UI에서 열기 위해 보관)
+
+// uncaughtException / unhandledRejection 글로벌 핸들러.
+// 예상치 못한 crash 시 사용자에게 친화적 다이얼로그 + 로그 파일에 기록.
+process.on('uncaughtException', (err) => {
+  try {
+    logLine(`[uncaughtException] ${err && err.stack ? err.stack : err}`);
+  } catch {
+    /* ignore */
+  }
+  // app ready 후에만 dialog 가능. ready 전이면 console.error로 끝.
+  if (app.isReady()) {
+    try {
+      dialog.showErrorBox(
+        'Ark Clipper - 예상치 못한 오류',
+        `${err && err.message ? err.message : err}\n\n` +
+          `이 오류가 반복되면 로그 파일을 첨부해 문의주세요.\n` +
+          `로그: ${logFilePath || '(생성되지 않음)'}`,
+      );
+    } catch {
+      /* ignore */
+    }
+  } else {
+    console.error('[uncaughtException]', err);
+  }
+});
+
+process.on('unhandledRejection', (reason) => {
+  try {
+    const msg = reason && reason.stack ? reason.stack : String(reason);
+    logLine(`[unhandledRejection] ${msg}`);
+  } catch {
+    /* ignore */
+  }
+});
 
 function getLogStream() {
   if (logStream) return logStream;
   try {
     const dir = app.getPath('userData');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const p = path.join(dir, 'next-server.log');
-    logStream = fs.createWriteStream(p, { flags: 'a' });
-    logStream.write(`\n=== ${new Date().toISOString()} app start (platform=${process.platform}) ===\n`);
+    logFilePath = path.join(dir, 'next-server.log');
+    logStream = fs.createWriteStream(logFilePath, { flags: 'a' });
+    logStream.write(`\n=== ${new Date().toISOString()} app start v${app.getVersion()} (platform=${process.platform}) ===\n`);
   } catch (e) {
     /* ignore */
   }
@@ -138,6 +173,7 @@ async function startNextServer() {
       ELECTRON_RUN_AS_NODE: '1',
       ARC_PORTABLE_ROOT: userDataDir,
       ARC_FONTS_DIR: fontsDir, // 폰트 절대경로 명시 (한국어 폰트 보장)
+      ARC_LOG_FILE: logFilePath || '', // UI "로그 열기" 버튼에서 사용
       RESOURCES_PATH: process.resourcesPath,
     },
   });
@@ -207,6 +243,59 @@ async function createWindow() {
 
   if (isDev) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
+
+  // 새 버전 체크 (production만, 비동기 fire-and-forget)
+  if (!isDev) {
+    setTimeout(() => {
+      checkForUpdates().catch((e) => logLine(`[update-check] ${e && e.message ? e.message : e}`));
+    }, 3000);
+  }
+}
+
+/**
+ * GitHub Releases API로 최신 버전 확인 + 사용자에게 알림.
+ * electron-updater 미사용 (publish 인프라 단순화). 사용자가 직접 다운로드.
+ */
+async function checkForUpdates() {
+  const REPO = 'inhwan0988/ark-clipper-';
+  const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+    headers: { Accept: 'application/vnd.github.v3+json' },
+  });
+  if (!res.ok) {
+    logLine(`[update-check] HTTP ${res.status}`);
+    return;
+  }
+  const latest = await res.json();
+  const latestTag = String(latest.tag_name || '').replace(/^v/, '');
+  const current = app.getVersion();
+  if (!latestTag || latestTag === current) {
+    logLine(`[update-check] up to date (${current})`);
+    return;
+  }
+  // semver 단순 비교 (major.minor.patch)
+  const toNums = (v) => v.split('.').map((n) => parseInt(n, 10) || 0);
+  const [lM, lm, lp] = toNums(latestTag);
+  const [cM, cm, cp] = toNums(current);
+  const isNewer = lM > cM || (lM === cM && lm > cm) || (lM === cM && lm === cm && lp > cp);
+  if (!isNewer) {
+    logLine(`[update-check] current=${current} latest=${latestTag} (not newer)`);
+    return;
+  }
+  logLine(`[update-check] new version available: ${current} → ${latestTag}`);
+  const choice = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: '새 버전이 있습니다',
+    message: `Ark Clipper v${latestTag}이(가) 출시되었습니다.`,
+    detail:
+      `현재 버전: v${current}\n새 버전: v${latestTag}\n\n` +
+      '지금 다운로드 페이지를 여시겠어요?',
+    buttons: ['지금 다운로드', '나중에'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (choice.response === 0) {
+    shell.openExternal(latest.html_url || `https://github.com/${REPO}/releases/latest`);
   }
 }
 

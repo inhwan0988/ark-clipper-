@@ -92,7 +92,9 @@ jobs:
             cat smoke/ascii.log
             exit 1
           fi
-          echo "✅ Smoke test passed: ffmpeg drawtext + Pretendard 한글 정상 렌더"
+          # 검증 4: better-sqlite3 native module load (production 결정적)
+          node -e "const Database = require('better-sqlite3'); const db = new Database(':memory:'); db.exec('CREATE TABLE t(x)'); db.prepare('INSERT INTO t VALUES(?)').run(1); console.log('sqlite OK row:', db.prepare('SELECT x FROM t').get()); db.close();"
+          echo "✅ Smoke test passed: ffmpeg drawtext + Pretendard + better-sqlite3 native load"
 
       # E2E test — Electron 앱 source launch + 메인 윈도우 로드 자동 검증.
       # next dev 서버를 백그라운드로 띄우고 electron source로 launch (production .exe 아님).

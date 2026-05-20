@@ -48,14 +48,16 @@ export async function extractAudio(projectId: string): Promise<string> {
 
     proc.on('close', (code) => {
       if (code !== 0) {
+        const userMessage = '오디오 추출 중 오류가 발생했습니다. 영상 파일이 손상되었거나 지원하지 않는 형식일 수 있어요.';
         emitProgress({
           projectId,
           step: 'extract_audio',
           status: 'error',
           progress: 0,
-          message: '오디오 추출 실패',
+          message: userMessage,
         });
-        reject(new Error(`ffmpeg extract audio exited with code ${code}`));
+        console.error(`[ffmpeg] extract_audio failed (code ${code})`);
+        reject(new Error(userMessage));
         return;
       }
       emitProgress({
@@ -269,7 +271,19 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
         console.error(`[ffmpeg] vf: ${vf}`);
         console.error(`[ffmpeg] stderr (last 2000 chars):`);
         console.error(stderr.slice(-2000));
-        reject(new Error(`ffmpeg exit ${code}: ${stderr.slice(-300)}`));
+        // 사용자 친화 메시지로 변환
+        const tail = stderr.toLowerCase();
+        let userMessage = `클립 ${opts.clipIndex + 1} 생성 중 오류가 발생했습니다.`;
+        if (tail.includes('no such file') || tail.includes('cannot open')) {
+          userMessage += ' 원본 영상 또는 자막 파일을 찾을 수 없어요.';
+        } else if (tail.includes('invalid argument') || tail.includes('parse')) {
+          userMessage += ' 자막/제목에 사용된 문자가 처리되지 않았어요.';
+        } else if (tail.includes('permission denied') || tail.includes('access')) {
+          userMessage += ' 저장 폴더 접근 권한을 확인해주세요.';
+        } else {
+          userMessage += ' 다시 시도하거나 로그 파일을 확인해주세요.';
+        }
+        reject(new Error(userMessage));
         return;
       }
       // 2차 방어: 성공이지만 출력 파일이 빈/너무 작은 경우 (ffmpeg가 success exit 했지만 결과 깨진 경우)

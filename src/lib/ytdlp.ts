@@ -65,15 +65,35 @@ export async function downloadVideo(projectId: string, url: string): Promise<{ t
 
     proc.on('close', (code) => {
       if (code !== 0) {
+        // 흔한 yt-dlp 실패 유형을 한국어로 분류 (사용자에게 친화적 메시지)
+        const err = stderr.toLowerCase();
+        let userMessage = '영상 다운로드에 실패했습니다.';
+        if (err.includes('video unavailable') || err.includes('private video')) {
+          userMessage = '이 영상은 비공개이거나 삭제되었습니다. URL을 확인해주세요.';
+        } else if (err.includes('age-restricted') || err.includes('sign in')) {
+          userMessage = '연령 제한 영상입니다. yt-dlp가 접근할 수 없는 영상이에요.';
+        } else if (err.includes('unsupported url')) {
+          userMessage = '지원하지 않는 URL 형식입니다. YouTube URL이 맞는지 확인해주세요.';
+        } else if (err.includes('http error 429') || err.includes('too many requests')) {
+          userMessage = 'YouTube가 일시적으로 요청을 차단했습니다. 잠시 후 다시 시도해주세요.';
+        } else if (err.includes('http error 403')) {
+          userMessage = 'YouTube 접근이 거부되었습니다. yt-dlp 업데이트가 필요할 수 있어요.';
+        } else if (err.includes('network is unreachable') || err.includes('failed to resolve')) {
+          userMessage = '네트워크 연결을 확인해주세요. 인터넷이 안 되거나 방화벽이 차단했을 수 있어요.';
+        } else if (err.includes('ffmpeg')) {
+          userMessage = '영상 병합 중 오류가 발생했습니다 (ffmpeg). 다시 시도해주세요.';
+        }
         emitProgress({
           projectId,
           step: 'download',
           status: 'error',
           progress: 0,
-          message: '다운로드 실패',
-          detail: stderr.slice(0, 500),
+          message: userMessage,
+          detail: stderr.slice(-500),
         });
-        reject(new Error(`yt-dlp exited with code ${code}: ${stderr.slice(0, 500)}`));
+        // 콘솔/로그 파일에는 원본 stderr 그대로 남김 (디버깅용)
+        console.error(`[yt-dlp] failed (code ${code}):`, stderr.slice(-1000));
+        reject(new Error(userMessage));
         return;
       }
 

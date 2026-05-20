@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
+import { AppFooter } from "@/components/app-footer";
 
 const geist = Geist({
   variable: "--font-geist",
@@ -19,8 +20,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" className={`${geist.variable} h-full antialiased`}>
-      <body className="min-h-full bg-[#0a1428] text-white font-[var(--font-geist)]">
-        {children}
+      <body className="min-h-full bg-[#0a1428] text-white font-[var(--font-geist)] flex flex-col">
+        <div className="flex-1">{children}</div>
+        <AppFooter />
       </body>
     </html>
   );
