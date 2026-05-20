@@ -62,7 +62,7 @@
       ],
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "identity": null
+      "identity": "-"
     },
     "win": {
       "target": [
