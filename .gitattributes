@@ -1,0 +1,30 @@
+# 모든 텍스트 파일은 LF로 통일 (Mac/Linux/Win 어디서 작업해도 동일)
+# Windows 직원이 추가되어도 line ending 충돌 없음
+* text=auto eol=lf
+
+# 바이너리 파일은 변환 안 함
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.svg binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.mp4 binary
+*.webm binary
+*.wav binary
+*.mp3 binary
+*.pdf binary
+*.zip binary
+*.dmg binary
+*.exe binary
+*.blockmap binary
+*.node binary
+
+# Electron/electron-builder 출력은 commit 안 됨 (.gitignore에 있어야 함)
+# 만약을 위해 명시
+dist/* binary
