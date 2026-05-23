@@ -162,7 +162,10 @@ export function ClipEditorV2({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(propStartTime);
   const [playing, setPlaying] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  // 배속은 customization에 저장 → 다운로드 시 ffmpeg에 적용 (영구 반영)
+  const playbackSpeed = customization.playbackSpeed ?? 1;
+  const setPlaybackSpeed = (v: number) =>
+    onCustomizationChange({ ...customization, playbackSpeed: v });
   const [muted, setMuted] = useState(false);
 
   useEffect(() => {

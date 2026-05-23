@@ -99,6 +99,10 @@ export interface ClipOptions {
   clipIndex: number;
   totalClips: number;
   layout: LayoutStyle;
+  /** 영상 재생 속도 (1.0 = 정상, 2.0 = 2배속). default 1.0
+   *  ffmpeg setpts(video) + atempo(audio)로 출력에 영구 적용.
+   *  허용 범위: 0.5 ~ 2.0 (atempo 단일 호출 제한) */
+  playbackSpeed?: number;
   /** 배경 영상 zoom (1.0 = 100%, 1.5 = 150%) — crop_vertical 모드에서만 적용 */
   bgZoom?: number;
   /** 배경 가로 오프셋 (1080 기준 px, ±540 범위) — crop_vertical 모드에서만 적용 */
@@ -125,6 +129,12 @@ export interface ClipOptions {
 const OUTPUT_W = 1080;
 const OUTPUT_H = 1920;
 const VIDEO_Y = 600;
+
+/** atempo는 0.5~2.0 단일 호출만 안전. 범위 밖이면 clamp. */
+function clampSpeed(s: number | undefined): number {
+  if (!s || !Number.isFinite(s)) return 1;
+  return Math.max(0.5, Math.min(2.0, s));
+}
 
 export async function generateClip(opts: ClipOptions): Promise<string> {
   const pp = getProjectPaths(opts.projectId);
@@ -235,15 +245,30 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
       });
     }
 
+    // 배속 처리 (1.0이 아닐 때만 setpts/atempo 추가).
+    // 자막/타이틀은 위 vf chain에서 이미 frame에 burn-in 됐으므로,
+    // setpts는 vf 마지막에 붙여서 frame 표시 속도만 조절 → 자막도 같이 빨라짐.
+    const speed = clampSpeed(opts.playbackSpeed);
+    let finalVf = vf;
+    if (speed !== 1) {
+      finalVf += `,setpts=PTS/${speed}`;
+    }
+
     // ⚠️ -ss를 input 앞에 두면 ffmpeg가 PTS를 리셋하지 않아 자막이 영상 시간과
     // 안 맞는 문제(첫 자막에서 멈춤)가 발생함. input 뒤로 옮겨서 output seek로
     // 처리하면 PTS가 0부터 다시 시작되어 자막(클립 상대 시간)과 정확히 매칭됨.
     const clipDuration = opts.endTime - opts.startTime;
-    const args = [
+    const args: string[] = [
       '-i', pp.source,
       '-ss', opts.startTime.toString(),
       '-t', clipDuration.toString(),
-      '-vf', vf,
+      '-vf', finalVf,
+    ];
+    // 배속이 1.0이 아니면 audio filter도 적용 (atempo)
+    if (speed !== 1) {
+      args.push('-af', `atempo=${speed}`);
+    }
+    args.push(
       '-c:v', 'libx264',
       '-preset', 'medium',
       '-crf', '23',
@@ -252,7 +277,7 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
       '-movflags', '+faststart',
       '-y',
       outputPath,
-    ];
+    );
 
     const proc = spawn(PATHS.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 

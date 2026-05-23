@@ -47,6 +47,8 @@ interface HookCustomization {
   bgZoom?: number;
   bgOffsetX?: number;
   bgOffsetY?: number;
+  /** 배속 (1.0 ~ 2.0). 출력 mp4에 영구 적용. */
+  playbackSpeed?: number;
 }
 
 interface ClipRequest {
@@ -241,6 +243,8 @@ export async function POST(req: Request) {
         bgZoom: cust?.bgZoom ?? bgZoom,
         bgOffsetX: cust?.bgOffsetX ?? bgOffsetX,
         bgOffsetY: cust?.bgOffsetY ?? bgOffsetY,
+        // 배속을 ffmpeg에 전달 → 출력 mp4에 영구 적용
+        playbackSpeed: cust?.playbackSpeed ?? 1,
         titleDrawtext,
       });
 

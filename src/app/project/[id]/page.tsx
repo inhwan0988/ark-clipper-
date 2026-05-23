@@ -60,6 +60,9 @@ const DEFAULT_CUSTOMIZATION: ClipCustomization = {
   subtitleX: 540,
   subtitleMaxCharsPerLine: 13,
   subtitleBoxWidth: 1080,
+
+  // 영상 재생 속도 (출력에 적용됨)
+  playbackSpeed: 1,
 };
 
 type Phase = 'idle' | 'processing' | 'select_hooks' | 'generating_clips' | 'complete';

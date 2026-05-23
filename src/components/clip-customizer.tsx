@@ -56,4 +56,8 @@ export interface ClipCustomization {
   subtitleMaxCharsPerLine?: number;
   /** 자막 박스 너비 (1080 기준). 좌우 핸들로 조정 가능. default 1080 */
   subtitleBoxWidth?: number;
+
+  /** 영상 재생 속도 (1.0 = 정상, 1.5 = 1.5배속, 2.0 = 2배속). default 1.0
+   *  ffmpeg setpts(video) + atempo(audio)로 출력 영상에 영구 적용. */
+  playbackSpeed?: number;
 }
