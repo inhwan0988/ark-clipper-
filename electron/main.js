@@ -29,6 +29,8 @@ let mainWindow;
 let nextProcess;
 let logStream;
 let logFilePath; // 로그 파일 절대경로 (UI에서 열기 위해 보관)
+let updateWindow; // 업데이트 진행 표시 창
+let updateInfoCache; // 마지막 update-available info 보관 (다이얼로그 재사용용)
 
 // uncaughtException / unhandledRejection 글로벌 핸들러.
 // 예상치 못한 crash 시 사용자에게 친화적 다이얼로그 + 로그 파일에 기록.
@@ -279,6 +281,81 @@ async function createWindow() {
  * release artifact에 latest.yml / latest-mac.yml 자동 포함되어야 함
  * (electron-builder --publish always 또는 onTag 빌드 시 자동 생성).
  */
+/**
+ * 진행률 표시용 미니 BrowserWindow (380x300, frameless 아님).
+ * 메인 윈도우와 별개로 작동 — 사용자가 메인 작업하면서도 다운로드 진행률 항상 확인 가능.
+ */
+function ensureUpdateWindow() {
+  if (updateWindow && !updateWindow.isDestroyed()) return updateWindow;
+  updateWindow = new BrowserWindow({
+    width: 380,
+    height: 300,
+    resizable: false,
+    minimizable: true,
+    maximizable: false,
+    fullscreenable: false,
+    title: 'Ark Clipper 업데이트',
+    backgroundColor: '#0a1428',
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+  updateWindow.loadFile(path.join(__dirname, 'update-window.html'));
+  updateWindow.on('closed', () => {
+    updateWindow = null;
+  });
+  return updateWindow;
+}
+
+/** update-window의 DOM을 JS로 직접 갱신 (preload + IPC 없이 단순하게). */
+function updateUpdateWindow(state) {
+  if (!updateWindow || updateWindow.isDestroyed()) return;
+  const safe = JSON.stringify(state);
+  const code = `
+    (function() {
+      var s = ${safe};
+      if (s.from != null) document.getElementById('from').textContent = s.from;
+      if (s.to != null) document.getElementById('to').textContent = s.to;
+      if (s.title != null) document.getElementById('title').textContent = s.title;
+      if (s.status != null) {
+        var el = document.getElementById('status');
+        el.textContent = s.status;
+        el.className = 'status' + (s.statusClass ? ' ' + s.statusClass : '');
+      }
+      var bar = document.getElementById('bar');
+      if (s.percent != null) {
+        bar.classList.remove('indeterminate');
+        bar.style.width = s.percent + '%';
+        document.getElementById('percent').textContent = s.percent.toFixed(1) + '%';
+      } else if (s.indeterminate) {
+        bar.classList.add('indeterminate');
+        bar.style.width = '30%';
+      }
+      if (s.speed != null) document.getElementById('speed').textContent = s.speed;
+      if (s.size != null) document.getElementById('size').textContent = s.size;
+      if (s.showActions === true) document.getElementById('actions').style.display = 'flex';
+      if (s.restartLabel != null) {
+        var b = document.getElementById('restartBtn');
+        b.textContent = s.restartLabel;
+        b.disabled = s.restartDisabled === true;
+      }
+    })();
+  `;
+  updateWindow.webContents.executeJavaScript(code).catch(() => {});
+}
+
+function formatBytes(n) {
+  if (!n || n <= 0) return '-';
+  if (n >= 1024 * 1024 * 1024) return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(0) + ' KB';
+  return n + ' B';
+}
+
 function setupAutoUpdater() {
   let updater;
   try {
@@ -301,23 +378,114 @@ function setupAutoUpdater() {
   updater.autoDownload = true;
   updater.autoInstallOnAppQuit = true;
 
-  updater.on('checking-for-update', () => logLine('[updater] checking...'));
-  updater.on('update-not-available', (info) => logLine(`[updater] up to date (${info && info.version})`));
-  updater.on('error', (err) => logLine(`[updater] error: ${err && err.message ? err.message : err}`));
-  updater.on('download-progress', (p) => {
-    logLine(`[updater] downloading ${p.percent.toFixed(1)}% (${(p.bytesPerSecond / 1024).toFixed(0)} KB/s)`);
+  updater.on('checking-for-update', () => {
+    logLine('[updater] checking...');
   });
 
-  updater.on('update-available', (info) => {
+  updater.on('update-not-available', (info) => {
+    logLine(`[updater] up to date (${info && info.version})`);
+    // 최신이면 별도 안내 안 함 (조용히)
+  });
+
+  updater.on('error', (err) => {
+    const msg = err && err.message ? err.message : String(err);
+    logLine(`[updater] error: ${msg}`);
+    if (updateWindow && !updateWindow.isDestroyed()) {
+      updateUpdateWindow({
+        title: '업데이트 실패',
+        status: '업데이트 다운로드 중 오류가 발생했어요: ' + msg,
+        statusClass: 'err',
+        indeterminate: false,
+        percent: 0,
+        showActions: true,
+        restartLabel: '창 닫기',
+        restartDisabled: false,
+      });
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        mainWindow.setProgressBar(-1);
+      } catch {}
+    }
+  });
+
+  updater.on('download-progress', (p) => {
+    const pct = typeof p.percent === 'number' ? p.percent : 0;
+    const speedKB = (p.bytesPerSecond || 0) / 1024;
+    const speedStr =
+      speedKB > 1024
+        ? (speedKB / 1024).toFixed(2) + ' MB/s'
+        : speedKB.toFixed(0) + ' KB/s';
+    logLine(`[updater] downloading ${pct.toFixed(1)}% (${speedStr})`);
+
+    // 1) 별도 progress 창 갱신
+    updateUpdateWindow({
+      title: '새 버전 다운로드 중',
+      status: '받는 중이에요. 끝나면 알려드릴게요.',
+      percent: pct,
+      speed: speedStr,
+      size:
+        formatBytes(p.transferred || 0) + ' / ' + formatBytes(p.total || 0),
+      showActions: true,
+      restartLabel: '다운로드 중…',
+      restartDisabled: true,
+    });
+
+    // 2) 메인 윈도우 dock / taskbar progress
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        mainWindow.setProgressBar(pct / 100);
+      } catch {}
+    }
+  });
+
+  updater.on('update-available', async (info) => {
+    updateInfoCache = info;
     const current = app.getVersion();
-    logLine(`[updater] new version: ${current} → ${info && info.version} — downloading in background`);
-    // OS native toast 알림 (비침습) — 사용자가 다른 작업 중일 때도 알림
+    const newer = info && info.version;
+    logLine(`[updater] new version: ${current} → ${newer} — downloading in background`);
+
+    // 1) 별도 progress 창 즉시 띄움 (사용자가 명확히 인지)
+    ensureUpdateWindow();
+    updateUpdateWindow({
+      from: current,
+      to: newer,
+      title: '새 버전 다운로드 중',
+      status:
+        '새로운 Ark Clipper가 있어요. 백그라운드로 받고 있고, 다 받으면 알려드릴게요.',
+      indeterminate: true,
+      speed: '연결 중…',
+      size: '-',
+      showActions: false,
+    });
+
+    // 2) 메인 윈도우 위에 modal 다이얼로그로 명시적 안내
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      // 비동기 — 사용자가 "확인" 누르기 전에도 다운로드는 계속 진행
+      dialog
+        .showMessageBox(mainWindow, {
+          type: 'info',
+          title: '업데이트 시작',
+          message: `🎉 새 버전 v${newer} 이(가) 있어요!`,
+          detail:
+            `현재 버전: v${current}\n` +
+            `새 버전: v${newer}\n\n` +
+            '백그라운드로 다운로드를 시작합니다.\n' +
+            '진행률은 별도 창에서 확인할 수 있어요.\n' +
+            '다 받으면 "지금 재시작" 다이얼로그가 나타납니다.',
+          buttons: ['확인'],
+          defaultId: 0,
+        })
+        .catch(() => {});
+    }
+
+    // 3) OS 토스트 (앱 포커스 없어도 인지)
     if (Notification.isSupported()) {
       try {
         new Notification({
-          title: '새 버전 다운로드 중',
-          body: `v${current} → v${info.version}을(를) 백그라운드에서 받고 있어요.`,
-          silent: true,
+          title: '새 버전 다운로드 시작',
+          body: `v${current} → v${newer} — 백그라운드로 받고 있어요.`,
+          silent: false,
         }).show();
       } catch (e) {
         logLine(`[updater] notification error: ${e && e.message ? e.message : e}`);
@@ -327,21 +495,71 @@ function setupAutoUpdater() {
 
   updater.on('update-downloaded', async (info) => {
     const current = app.getVersion();
-    logLine(`[updater] download complete: ${current} → ${info && info.version}`);
-    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const newer = info && info.version;
+    logLine(`[updater] download complete: ${current} → ${newer}`);
 
-    // 1. OS native toast 알림 (사용자가 앱에 포커스 안 줘도 인지 가능)
+    // dock progress 제거
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        mainWindow.setProgressBar(-1);
+      } catch {}
+    }
+
+    // 1) progress 창 → "지금 재시작" 액션 활성화
+    if (updateWindow && !updateWindow.isDestroyed()) {
+      updateUpdateWindow({
+        title: '다운로드 완료!',
+        status: '새 버전 적용 준비 끝. "지금 재시작"을 누르면 적용됩니다.',
+        statusClass: 'ok',
+        percent: 100,
+        speed: '완료',
+        showActions: true,
+        restartLabel: '🚀 지금 재시작',
+        restartDisabled: false,
+      });
+      // 버튼 클릭 핸들러 inject
+      updateWindow.webContents
+        .executeJavaScript(
+          `
+        (function() {
+          var btn = document.getElementById('restartBtn');
+          var later = document.getElementById('laterBtn');
+          if (btn && !btn._wired) {
+            btn._wired = true;
+            btn.addEventListener('click', function() {
+              window.location.hash = '#restart';
+            });
+          }
+          if (later && !later._wired) {
+            later._wired = true;
+            later.addEventListener('click', function() {
+              window.location.hash = '#later';
+            });
+          }
+        })();
+      `,
+        )
+        .catch(() => {});
+
+      // hash 변경 감지 → 액션
+      updateWindow.webContents.on('did-navigate-in-page', (_e, url) => {
+        if (url.endsWith('#restart')) {
+          killNextProcessTree();
+          setImmediate(() => updater.quitAndInstall());
+        } else if (url.endsWith('#later')) {
+          if (updateWindow && !updateWindow.isDestroyed()) updateWindow.close();
+        }
+      });
+    }
+
+    // 2) OS 토스트
     if (Notification.isSupported()) {
       try {
         const notif = new Notification({
-          title: '새 버전 준비 완료',
-          body: `v${current} → v${info.version} — 클릭하면 지금 적용`,
+          title: '✅ 새 버전 준비 완료',
+          body: `v${current} → v${newer} — 클릭하면 지금 적용`,
         });
         notif.on('click', () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.show();
-            mainWindow.focus();
-          }
           killNextProcessTree();
           setImmediate(() => updater.quitAndInstall());
         });
@@ -351,24 +569,27 @@ function setupAutoUpdater() {
       }
     }
 
-    // 2. 다이얼로그 (사용자가 앱에 포커스 줘 있으면 명시적 확인)
-    const choice = await dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: '새 버전 준비 완료',
-      message: `Ark Clipper 업데이트가 준비됐어요`,
-      detail:
-        `현재: v${current}\n` +
-        `새 버전: v${info.version}\n\n` +
-        '지금 앱을 재시작하면 새 버전이 적용됩니다.\n' +
-        '나중에 선택하면 다음 종료 시 자동 적용돼요.',
-      buttons: ['지금 재시작', '나중에'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (choice.response === 0) {
-      // 자식 프로세스 먼저 정리 후 quit + install
-      killNextProcessTree();
-      setImmediate(() => updater.quitAndInstall());
+    // 3) 메인 윈도우 modal 다이얼로그 (마지막 결정타)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const choice = await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: '새 버전 준비 완료',
+        message: `✅ v${newer} 적용 준비가 끝났어요`,
+        detail:
+          `현재: v${current}\n` +
+          `새 버전: v${newer}\n\n` +
+          '지금 앱을 재시작하면 새 버전이 적용됩니다.\n' +
+          '"나중에" 선택해도 다음 종료 시 자동 적용돼요.',
+        buttons: ['지금 재시작', '나중에'],
+        defaultId: 0,
+        cancelId: 1,
+      });
+      if (choice.response === 0) {
+        killNextProcessTree();
+        setImmediate(() => updater.quitAndInstall());
+      } else {
+        if (updateWindow && !updateWindow.isDestroyed()) updateWindow.close();
+      }
     }
   });
 
@@ -386,6 +607,7 @@ function setupAutoUpdater() {
     },
     60 * 60 * 1000,
   );
+  void updateInfoCache;
 }
 
 app.whenReady().then(createWindow);
