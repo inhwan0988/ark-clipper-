@@ -30,10 +30,41 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Capcut 페이지용 라이트 팔레트 (Toss tokens) */
+  --color-bg: #F9FAFB;
+  --color-surface: #FFFFFF;
+  --color-ink: #191F28;
+  --color-sub: #4E5968;
+  --color-mute: #8B95A1;
+  --color-line: #E5E8EB;
+  --color-lineStrong: #D1D6DB;
+  --color-chip: #F2F4F6;
+  --color-brand: #3182F6;
+  --color-brandHover: #1B64DA;
+  --color-brandSoft: #E8F2FE;
+  --color-success: #22C55E;
+  --color-successSoft: #E6F9ED;
+  --color-warn: #F59E0B;
+  --color-warnSoft: #FEF6E6;
+  --color-danger: #F04452;
+  --color-dangerSoft: #FEECEE;
+  --color-premium: #8B5CF6;
+  --color-premiumHover: #7C3AED;
+  --color-premiumSoft: #F3EFFD;
+
+  --radius-xl2: 16px;
+  --radius-xl3: 20px;
 }
 
 html, body {
   background: #0a1428 !important;
   color: var(--foreground);
   font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif;
+}
+
+/* /capcut 라우트에서는 라이트 테마 적용 */
+body:has(.capcut-light-theme) {
+  background: #F9FAFB !important;
+  color: #191F28;
 }
