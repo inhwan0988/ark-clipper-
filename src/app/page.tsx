@@ -79,17 +79,9 @@ export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col bg-[#0a1428]">
       {/* Header */}
-      <header className="border-b border-[#1a2d4d] px-6 py-4 bg-[#0a1428] flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold">ARK Clipper</h1>
-          <p className="text-sm text-gray-600">YouTube 롱폼 → 쇼츠 자동 생성</p>
-        </div>
-        <a
-          href="/capcut"
-          className="hidden sm:inline-flex items-center gap-2 rounded-lg border border-purple-500/40 bg-purple-500/10 px-3 py-1.5 text-xs font-bold text-purple-300 hover:bg-purple-500/20 transition"
-        >
-          🎬 캡컷 반자동 편집 <span className="text-[10px] opacity-70">BETA</span>
-        </a>
+      <header className="border-b border-[#1a2d4d] px-6 py-4 bg-[#0a1428]">
+        <h1 className="text-xl font-bold">ARK Clipper</h1>
+        <p className="text-sm text-gray-600">YouTube 롱폼 → 쇼츠 자동 생성</p>
       </header>
 
       {/* Main */}
