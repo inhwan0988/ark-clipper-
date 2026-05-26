@@ -374,9 +374,12 @@ function setupAutoUpdater() {
     debug: () => {},
   };
 
-  // 자동 다운로드 ON, 자동 설치는 OFF (사용자 동의 후 재시작)
-  updater.autoDownload = true;
-  updater.autoInstallOnAppQuit = true;
+  // macOS는 ad-hoc 서명 한계로 자동 다운로드해도 Squirrel.Mac code signature 검증 실패 →
+  // 다운로드만 하고 못 쓰는 결과. 따라서 macOS는 "감지 + 다운로드 페이지 안내" 모드.
+  // Windows는 정상적으로 자동 다운로드 + 적용 가능.
+  const IS_MAC = process.platform === 'darwin';
+  updater.autoDownload = !IS_MAC;
+  updater.autoInstallOnAppQuit = !IS_MAC;
 
   updater.on('checking-for-update', () => {
     logLine('[updater] checking...');
@@ -390,6 +393,9 @@ function setupAutoUpdater() {
   updater.on('error', (err) => {
     const msg = err && err.message ? err.message : String(err);
     logLine(`[updater] error: ${msg}`);
+    // macOS는 autoDownload=false라 다운로드 자체를 안 하지만,
+    // 만에 하나 update-check 단계에서 에러가 나면 사용자한테 빨간 창 안 띄우고 로그만.
+    if (IS_MAC) return;
     if (updateWindow && !updateWindow.isDestroyed()) {
       updateUpdateWindow({
         title: '업데이트 실패',
@@ -443,6 +449,45 @@ function setupAutoUpdater() {
     updateInfoCache = info;
     const current = app.getVersion();
     const newer = info && info.version;
+
+    // ━━ macOS: 다운로드 페이지 안내 모드 ━━
+    if (IS_MAC) {
+      logLine(`[updater] new version: ${current} → ${newer} — macOS는 수동 안내 모드`);
+
+      // OS 토스트 (앱 포커스 없어도 인지)
+      if (Notification.isSupported()) {
+        try {
+          new Notification({
+            title: `🎉 새 버전 v${newer}`,
+            body: '다운로드 페이지를 열려면 앱 창을 확인해주세요.',
+            silent: false,
+          }).show();
+        } catch {}
+      }
+
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+
+      const choice = await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: '새 버전 안내',
+        message: `🎉 새 버전 v${newer} 이(가) 있어요!`,
+        detail:
+          `현재 버전: v${current}\n` +
+          `새 버전: v${newer}\n\n` +
+          'macOS는 코드 서명 정책상 매번 새 dmg를 받아서 설치해주셔야 해요.\n' +
+          '"다운로드 페이지 열기" 버튼을 누르면 새 버전을 받을 수 있는 페이지가 열립니다.\n\n' +
+          '⏱️ 설치는 1분도 안 걸려요.',
+        buttons: ['📥 다운로드 페이지 열기', '나중에'],
+        defaultId: 0,
+        cancelId: 1,
+      });
+      if (choice.response === 0) {
+        shell.openExternal('https://arkvvs-tools.vercel.app/tools/ark-clipper');
+      }
+      return;
+    }
+
+    // ━━ Windows: 자동 다운로드 + 적용 ━━
     logLine(`[updater] new version: ${current} → ${newer} — downloading in background`);
 
     // 1) 별도 progress 창 즉시 띄움 (사용자가 명확히 인지)
@@ -461,7 +506,6 @@ function setupAutoUpdater() {
 
     // 2) 메인 윈도우 위에 modal 다이얼로그로 명시적 안내
     if (mainWindow && !mainWindow.isDestroyed()) {
-      // 비동기 — 사용자가 "확인" 누르기 전에도 다운로드는 계속 진행
       dialog
         .showMessageBox(mainWindow, {
           type: 'info',
@@ -479,7 +523,7 @@ function setupAutoUpdater() {
         .catch(() => {});
     }
 
-    // 3) OS 토스트 (앱 포커스 없어도 인지)
+    // 3) OS 토스트
     if (Notification.isSupported()) {
       try {
         new Notification({
