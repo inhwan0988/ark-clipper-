@@ -46,6 +46,13 @@ export async function extractAudio(projectId: string): Promise<string> {
 
     const proc = spawn(PATHS.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
+    // stderr 캡처 — 디버깅용 (마지막 4KB만 유지)
+    let stderrBuf = '';
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      stderrBuf += chunk.toString();
+      if (stderrBuf.length > 4096) stderrBuf = stderrBuf.slice(-4096);
+    });
+
     proc.on('close', (code) => {
       if (code !== 0) {
         const userMessage = '오디오 추출 중 오류가 발생했습니다. 영상 파일이 손상되었거나 지원하지 않는 형식일 수 있어요.';
@@ -56,7 +63,7 @@ export async function extractAudio(projectId: string): Promise<string> {
           progress: 0,
           message: userMessage,
         });
-        console.error(`[ffmpeg] extract_audio failed (code ${code})`);
+        console.error(`[ffmpeg] extract_audio failed (code ${code})\n${stderrBuf.slice(-1000)}`);
         reject(new Error(userMessage));
         return;
       }

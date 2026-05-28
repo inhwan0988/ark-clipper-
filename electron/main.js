@@ -482,7 +482,7 @@ function setupAutoUpdater() {
         cancelId: 1,
       });
       if (choice.response === 0) {
-        shell.openExternal('https://arkvvs-tools.vercel.app/tools/ark-clipper');
+        shell.openExternal('https://tools.arkvvs.ai/tools/ark-clipper');
       }
       return;
     }
