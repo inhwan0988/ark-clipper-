@@ -10,6 +10,16 @@ export interface SubtitleStyle {
   primaryColor: string;
   outlineColor: string;
   bold: boolean;
+  // Phase 2 — 강조 단어 highlight
+  /** 강조 단어 색 (6자리 hex, # 없이). default 'FFE600' */
+  emphasisColor?: string;
+  /** 강조 단어 크기 배율 % (default 130) */
+  emphasisScale?: number;
+  // Phase 2 — emoji 자동
+  /** emoji 자동 삽입 on/off (default true) */
+  emojiEnabled?: boolean;
+  /** emoji 위치 (default 'end') */
+  emojiPlacement?: 'inline' | 'end';
 }
 
 interface SubtitleCustomizerProps {
@@ -182,6 +192,83 @@ export function SubtitleCustomizer({ value, onChange }: SubtitleCustomizerProps)
               />
             </div>
           </div>
+
+          {/* Phase 2 — 강조 단어 색 */}
+          <div>
+            <label className="block text-gray-600 text-xs mb-1.5">
+              강조 색 <span className="text-gray-500">(키워드 highlight)</span>
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {PRESET_COLORS.map((c) => (
+                <button
+                  key={`emph-${c.hex}`}
+                  onClick={() => update({ emphasisColor: c.hex })}
+                  title={c.name}
+                  className={`w-8 h-8 rounded border-2 transition-all ${
+                    (value.emphasisColor ?? 'FFE600') === c.hex ? 'border-[#4988C4] scale-110' : 'border-zinc-600'
+                  }`}
+                  style={{ backgroundColor: `#${c.hex}` }}
+                />
+              ))}
+              <input
+                type="color"
+                value={`#${value.emphasisColor ?? 'FFE600'}`}
+                onChange={(e) => update({ emphasisColor: e.target.value.replace('#', '').toUpperCase() })}
+                className="w-8 h-8 rounded border-2 border-zinc-600 bg-transparent cursor-pointer"
+                title="직접 선택"
+              />
+            </div>
+          </div>
+
+          {/* Phase 2 — 강조 크기 배율 */}
+          <div>
+            <label className="flex justify-between items-center text-gray-600 text-xs mb-1.5">
+              <span>강조 크기 배율</span>
+              <span className="text-white">{value.emphasisScale ?? 130}%</span>
+            </label>
+            <input
+              type="range"
+              min={100} max={180} step={5}
+              value={value.emphasisScale ?? 130}
+              onChange={(e) => update({ emphasisScale: parseInt(e.target.value) })}
+              className="w-full accent-[#4988C4]"
+            />
+          </div>
+
+          {/* Phase 2 — emoji 자동 toggle + 위치 */}
+          <div className="flex items-center justify-between">
+            <label className="text-gray-600 text-xs">emoji 자동 추가</label>
+            <button
+              onClick={() => update({ emojiEnabled: !(value.emojiEnabled ?? true) })}
+              className={`relative w-10 h-6 rounded-full transition-colors ${
+                (value.emojiEnabled ?? true) ? 'bg-[#4988C4]' : 'bg-[#243a5c]'
+              }`}
+            >
+              <div className={`absolute top-0.5 w-5 h-5 bg-[#0a1428] rounded-full transition-transform ${
+                (value.emojiEnabled ?? true) ? 'translate-x-4' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </div>
+          {(value.emojiEnabled ?? true) && (
+            <div>
+              <label className="block text-gray-600 text-xs mb-1.5">emoji 위치</label>
+              <div className="flex gap-2">
+                {(['end', 'inline'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => update({ emojiPlacement: p })}
+                    className={`flex-1 px-3 py-1.5 rounded text-xs transition-colors ${
+                      (value.emojiPlacement ?? 'end') === p
+                        ? 'bg-[#4988C4] text-white'
+                        : 'bg-[#1a2d4d] text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {p === 'end' ? '문장 끝' : '인라인'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Preview */}
           <div>

@@ -42,6 +42,14 @@ export interface SubtitleConfig {
   y: number;          // 1080x1920 기준 Y (bottom-center alignment 기준)
   /** 한 줄 최대 글자 수 (사용자 지정). 미설정 시 fontSize 기반 자동 계산 */
   maxCharsPerLine?: number;
+  /** Phase 2 — 강조 단어 색 (6자리 hex, # 없이). default 'FFE600' (yellow). */
+  emphasisColor?: string;
+  /** Phase 2 — 강조 단어 크기 배율 (%). 100=동일, 130=130% 확대. default 130 */
+  emphasisScale?: number;
+  /** Phase 2 — emoji 자동 추가 on/off. default true */
+  emojiEnabled?: boolean;
+  /** Phase 2 — emoji 위치: 'end' (마지막 줄 끝), 'inline' (현재는 end와 동일). default 'end' */
+  emojiPlacement?: 'inline' | 'end';
 }
 
 /**
@@ -319,9 +327,42 @@ export function generateSubtitleFile(
       (seg) => seg.end > startTime && seg.start < endTime
     );
 
-    // segment 안의 무음(pause)에서 자막이 그대로 떠 있는 문제 방지 — word-level gap 기준으로 분할
+    // Phase 2: 강조 색/배율 + emoji 옵션
+    const emphasisColor = subtitle.emphasisColor ?? 'FFE600';
+    const emphasisScale = Math.max(80, Math.min(200, subtitle.emphasisScale ?? 130));
+    const emojiEnabled = subtitle.emojiEnabled ?? true;
+    const emojiPlacement = subtitle.emojiPlacement ?? 'end';
+
+    // segment 안의 무음(pause)에서 자막이 그대로 떠 있는 문제 방지 — word-level gap 기준으로 분할.
+    // 분할 결과(subSegment)는 원본 segment의 keywords/emoji를 그대로 상속받음
+    // (splitSegmentByPauses 시그니처는 변경하지 않음).
     const PAUSE_GAP_SEC = 0.7;
-    const subSegments = relevantSegments.flatMap((seg) => splitSegmentByPauses(seg, PAUSE_GAP_SEC));
+    const subSegments = relevantSegments.flatMap((seg) =>
+      splitSegmentByPauses(seg, PAUSE_GAP_SEC).map((sub) => ({
+        ...sub,
+        keywords: seg.keywords,
+        emoji: seg.emoji,
+      })),
+    );
+
+    // ASS override: 한 줄 안의 keyword를 색+크기로 wrap.
+    const applyEmphasis = (line: string, keywords?: string[]): string => {
+      if (!keywords || keywords.length === 0) return line;
+      const sorted = [...keywords].sort((a, b) => b.length - a.length);
+      let result = line;
+      for (const kw of sorted) {
+        if (!kw || kw.length < 1) continue;
+        const idx = result.indexOf(kw);
+        if (idx < 0) continue;
+        const color = hexToAss(emphasisColor, '00');
+        const before = result.slice(0, idx);
+        const after = result.slice(idx + kw.length);
+        // {\c&Hyellow&\fscx130\fscy130}keyword{\r}
+        const wrapped = `{\\c${color}\\fscx${emphasisScale}\\fscy${emphasisScale}}${kw}{\\r}`;
+        result = before + wrapped + after;
+      }
+      return result;
+    };
 
     for (const seg of subSegments) {
       const relStart = Math.max(0, seg.start - startTime);
@@ -342,19 +383,27 @@ export function generateSubtitleFile(
         return `{\\fscx${sc}\\fscy${sc}}`;
       };
 
+      // Phase 2 — emoji는 마지막 line 끝에만 한 번 부착 ('end' / 'inline' 둘 다 end 위치)
+      const suffix =
+        emojiEnabled && seg.emoji && (emojiPlacement === 'end' || emojiPlacement === 'inline')
+          ? ` ${seg.emoji}`
+          : '';
+
       if (lines.length === 1) {
         const ov = computeOverride(lines[0]);
-        events += `Dialogue: 0,${toAssTime(relStart)},${toAssTime(relEnd)},Default,,0,0,0,,${ov}${lines[0]}\n`;
+        const lineText = applyEmphasis(lines[0], seg.keywords) + suffix;
+        events += `Dialogue: 0,${toAssTime(relStart)},${toAssTime(relEnd)},Default,,0,0,0,,${ov}${lineText}\n`;
       } else {
         // 글자 수 비율로 시간 배분
         const totalChars = lines.reduce((sum, l) => sum + Math.max(1, l.length), 0);
         let cursor = relStart;
         for (let i = 0; i < lines.length; i++) {
           const portion = Math.max(1, lines[i].length) / totalChars;
-          // 마지막 라인은 정확히 segEnd까지 (rounding 누적 오차 방지)
           const lineEnd = i === lines.length - 1 ? relEnd : cursor + segDuration * portion;
           const ov = computeOverride(lines[i]);
-          events += `Dialogue: 0,${toAssTime(cursor)},${toAssTime(lineEnd)},Default,,0,0,0,,${ov}${lines[i]}\n`;
+          const withEmphasis = applyEmphasis(lines[i], seg.keywords);
+          const lineSuffix = i === lines.length - 1 ? suffix : '';
+          events += `Dialogue: 0,${toAssTime(cursor)},${toAssTime(lineEnd)},Default,,0,0,0,,${ov}${withEmphasis}${lineSuffix}\n`;
           cursor = lineEnd;
         }
       }
