@@ -2,7 +2,14 @@
 
 export interface ClipCustomization {
   // 레이아웃
-  layout: 'letterbox' | 'crop_vertical';
+  layout: 'letterbox' | 'crop_vertical' | 'custom_background';
+
+  /**
+   * custom_background 모드에서 사용자가 업로드한 배경 이미지/영상 절대경로.
+   * 이미지: jpg/jpeg/png/webp. 영상: mp4/mov/webm/mkv.
+   * letterbox/crop_vertical 모드에서는 무시.
+   */
+  customBackgroundPath?: string;
 
   // 상단 타이틀 (자동 생성, AI 후킹 제목 사용 - 텍스트는 hook별, 폰트는 공통)
   titleFontName: string;

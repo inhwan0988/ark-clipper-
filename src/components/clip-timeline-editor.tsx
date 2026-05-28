@@ -12,7 +12,7 @@ interface ClipTimelineEditorProps {
   endTime: number;
   title: string;
   hashtags?: string[];
-  layout?: 'letterbox' | 'crop_vertical';  // per-clip 오버라이드
+  layout?: 'letterbox' | 'crop_vertical' | 'custom_background';  // per-clip 오버라이드
   transcript?: Transcript | null;          // 말자막 미리보기용
 
   // 저장 버튼 누를 때 한번에 호출 (draft → committed)
@@ -21,7 +21,7 @@ interface ClipTimelineEditorProps {
     endTime: number;
     title: string;
     hashtags: string[];
-    layout: 'letterbox' | 'crop_vertical';
+    layout: 'letterbox' | 'crop_vertical' | 'custom_background';
   }) => void;
 
   // AI 원본으로 되돌리기
@@ -122,7 +122,7 @@ export function ClipTimelineEditor({
   const [draftEndTime, setDraftEndTime] = useState(propEndTime);
   const [draftTitle, setDraftTitle] = useState(propTitle);
   const [draftHashtags, setDraftHashtags] = useState<string[]>(propHashtags || []);
-  const [draftLayout, setDraftLayout] = useState<'letterbox' | 'crop_vertical'>(propLayout || customization.layout);
+  const [draftLayout, setDraftLayout] = useState<'letterbox' | 'crop_vertical' | 'custom_background'>(propLayout || customization.layout);
 
   // props 변경 시 draft 리셋 (다른 hook으로 포커스 변경, 되돌리기 등)
   // hashtags/layout도 deps에 포함해야 되돌리기 동작 시 모두 reset됨

@@ -9,6 +9,7 @@ import { ClipEditorV2 } from '@/components/clip-editor-v2';
 import { ClipSidebar } from '@/components/clip-sidebar';
 import { getStoredApiKey, getStoredOpenAiKey } from '@/components/api-key-settings';
 import ErrorWithHint from '@/components/error-with-hint';
+import { TemplateManager } from '@/components/template-manager';
 import { triggerDownload } from '@/lib/trigger-download';
 import type { ClipCustomization } from '@/components/clip-customizer';
 import type { Project, Clip, HookSuggestion, Transcript } from '@/types';
@@ -329,6 +330,7 @@ export default function ProjectPage() {
       bgZoom: eff.bgZoom,
       bgOffsetX: eff.bgOffsetX,
       bgOffsetY: eff.bgOffsetY,
+      customBackgroundPath: eff.customBackgroundPath,
       subtitle: eff.subtitleEnabled
         ? {
             fontName: eff.subtitleFontName,
@@ -413,6 +415,7 @@ export default function ProjectPage() {
         bgZoom: customization.bgZoom,
         bgOffsetX: customization.bgOffsetX,
         bgOffsetY: customization.bgOffsetY,
+        customBackgroundPath: customization.customBackgroundPath,
         subtitle: customization.subtitleEnabled ? {
           fontName: customization.subtitleFontName,
           fontSize: customization.subtitleFontSize,
@@ -487,6 +490,11 @@ export default function ProjectPage() {
             </p>
           )}
         </div>
+        {/* 자막+타이틀+채널+layout 묶음 프리셋 (현재 customization을 저장/적용/삭제) */}
+        <TemplateManager
+          current={customization}
+          onApply={(next) => setCustomization(next)}
+        />
       </header>
 
       <main
