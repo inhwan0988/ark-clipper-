@@ -289,7 +289,38 @@ export async function analyzeHooks(
     return true;
   });
 
-  const hooks = validHooks.slice(0, targetCount);
+  let hooks = validHooks.slice(0, targetCount);
+
+  // [Phase 3 / Task 1] Virality Score — best-effort 병렬 계산
+  try {
+    emitProgress({
+      projectId,
+      step: 'analyze',
+      status: 'running',
+      progress: 80,
+      message: 'Virality 점수 계산 중...',
+    });
+    const viralities = await Promise.all(
+      hooks.map((h) =>
+        calculateViralityScore(h, transcript, apiKey).catch((e) => {
+          console.warn('[virality] hook scoring failed:', e instanceof Error ? e.message : e);
+          return null;
+        }),
+      ),
+    );
+    hooks = hooks.map((h, i) => {
+      const v = viralities[i];
+      if (!v) return h;
+      return {
+        ...h,
+        virality_score: v.score,
+        virality_reasons: v.reasons,
+        predicted_reach: v.predictedReach,
+      };
+    });
+  } catch (e) {
+    console.warn('[virality] batch failed (non-fatal):', e instanceof Error ? e.message : e);
+  }
 
   fs.writeFileSync(pp.hooks, JSON.stringify(hooks, null, 2), 'utf-8');
 
@@ -388,4 +419,105 @@ function formatTime(seconds: number): string {
   const s = Math.floor(seconds % 60);
   if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [Phase 3 / Task 1] Virality Score 계산
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ViralityResult {
+  score: number;                                  // 0-100
+  reasons: string[];                              // 한국어 짧은 근거 1~3개
+  predictedReach: 'low' | 'medium' | 'high';      // <40 / 40-70 / >70
+}
+
+/**
+ * 단일 hook + 해당 클립 구간의 transcript 일부를 Claude에 넘겨
+ * "예상 도달 점수"를 0-100으로 산정. Heuristic baseline + Claude AI 결합.
+ *
+ *  - score: hook strength(40) + 길이 적정성(20, 45~75초 최적) + 감정 강도(40)
+ *  - reasons: 점수 근거 짧은 한국어 1~3개
+ *  - predictedReach: <40 low / 40~70 medium / >70 high
+ *
+ * 비용: 1 hook당 ~400 토큰. analyzeHooks가 결과를 hook 객체에 캐시.
+ */
+export async function calculateViralityScore(
+  hook: HookSuggestion,
+  transcript: Transcript,
+  apiKey: string,
+): Promise<ViralityResult> {
+  const lenSec = hook.end_time - hook.start_time;
+  let lenScore = 0;
+  if (lenSec >= 45 && lenSec <= 75) lenScore = 30;
+  else if (lenSec >= 30 && lenSec <= 90) lenScore = 22;
+  else lenScore = 10;
+  const baseScore = Math.round(lenScore + (hook.confidence ?? 0.5) * 50);
+
+  if (!apiKey || !apiKey.trim()) {
+    const score = Math.max(0, Math.min(100, baseScore));
+    return {
+      score,
+      reasons: ['휴리스틱(길이+신뢰도) 기반 추정 점수입니다.'],
+      predictedReach: score < 40 ? 'low' : score > 70 ? 'high' : 'medium',
+    };
+  }
+
+  const inRange = transcript.segments
+    .filter((seg) => seg.end > hook.start_time && seg.start < hook.end_time)
+    .map((s) => s.text)
+    .join(' ')
+    .slice(0, 700);
+
+  const client = new Anthropic({ apiKey: apiKey.trim(), maxRetries: 2, timeout: 60_000 });
+  const systemPrompt = `당신은 한국 유튜브 쇼츠 성과를 예측하는 분석가입니다.
+주어진 쇼츠 후보(제목 + 대사)에 대해 0-100 점수를 매깁니다.
+
+평가 기준 (가중치):
+1. Hook strength (40점) — 첫 3초 임팩트, 호기심 자극, 클릭 유발
+2. 길이 적정성 (20점) — 45~75초가 최적
+3. 감정 강도 (40점) — 놀라움/유머/충격/공감/실용 가치
+
+JSON만 출력:
+{
+  "score": <0-100 정수>,
+  "reasons": [<짧은 한국어 근거 1~3개, 각 30자 이내>],
+  "predictedReach": "low" | "medium" | "high"
+}`;
+
+  try {
+    const response = await createWithFallback(client, {
+      max_tokens: 400,
+      temperature: 0.3,
+      system: systemPrompt,
+      messages: [{
+        role: 'user',
+        content: `제목: ${hook.title}\n길이: ${lenSec.toFixed(1)}초\n신뢰도: ${(hook.confidence ?? 0).toFixed(2)}\n대사:\n${inRange || '(없음)'}\n\nJSON만 출력.`,
+      }],
+    });
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('no json');
+    const parsed = JSON.parse(jsonMatch[0]) as Partial<ViralityResult> & { score?: unknown };
+    const rawScore = typeof parsed.score === 'number'
+      ? parsed.score
+      : typeof parsed.score === 'string' ? parseFloat(parsed.score as string) : NaN;
+    const score = Math.max(0, Math.min(100, Math.round(isFinite(rawScore) ? rawScore : baseScore)));
+    const reasons = Array.isArray(parsed.reasons)
+      ? (parsed.reasons.filter((r) => typeof r === 'string') as string[]).slice(0, 3)
+      : ['AI 평가'];
+    const predictedReach: 'low' | 'medium' | 'high' =
+      parsed.predictedReach === 'low' || parsed.predictedReach === 'high' || parsed.predictedReach === 'medium'
+        ? parsed.predictedReach
+        : (score < 40 ? 'low' : score > 70 ? 'high' : 'medium');
+    return { score, reasons, predictedReach };
+  } catch (err) {
+    console.warn('[virality] AI 실패 → heuristic fallback:', err instanceof Error ? err.message : err);
+    const score = Math.max(0, Math.min(100, baseScore));
+    return {
+      score,
+      reasons: ['AI 평가 실패 - 휴리스틱 추정.'],
+      predictedReach: score < 40 ? 'low' : score > 70 ? 'high' : 'medium',
+    };
+  }
 }
