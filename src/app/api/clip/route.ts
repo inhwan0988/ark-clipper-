@@ -44,6 +44,11 @@ interface HookCustomization {
   subtitleBgOpacity?: number;
   subtitleY?: number;
   subtitleMaxCharsPerLine?: number;
+  // Phase 2 — 강조 + emoji 옵션
+  subtitleEmphasisColor?: string;
+  subtitleEmphasisScale?: number;
+  subtitleEmojiEnabled?: boolean;
+  subtitleEmojiPlacement?: 'inline' | 'end';
   bgZoom?: number;
   bgOffsetX?: number;
   bgOffsetY?: number;
@@ -186,6 +191,11 @@ export async function POST(req: Request) {
                 bgOpacity: cust.subtitleBgOpacity ?? 60,
                 y: cust.subtitleY ?? 1670,
                 maxCharsPerLine: cust.subtitleMaxCharsPerLine ?? 13,
+                // Phase 2
+                emphasisColor: cust.subtitleEmphasisColor ?? 'FFE600',
+                emphasisScale: cust.subtitleEmphasisScale ?? 130,
+                emojiEnabled: cust.subtitleEmojiEnabled ?? true,
+                emojiPlacement: cust.subtitleEmojiPlacement ?? 'end',
               }
             : undefined)
         : subtitle;

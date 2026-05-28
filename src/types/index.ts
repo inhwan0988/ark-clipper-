@@ -42,6 +42,10 @@ export interface TranscriptSegment {
   end: number;
   text: string;
   words: TranscriptWord[];
+  /** Phase 2 — Claude가 추출한 강조 단어 (자막에서 색/크기로 강조 렌더링) */
+  keywords?: string[];
+  /** Phase 2 — Claude가 매칭한 emoji 1개 (감정/주제 일치 시) */
+  emoji?: string;
 }
 
 export interface TranscriptWord {
