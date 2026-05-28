@@ -75,6 +75,14 @@ export interface HookSuggestion {
   quote?: string;
   // per-clip 레이아웃 오버라이드 (없으면 전역 customization.layout 사용)
   layout?: 'letterbox' | 'crop_vertical';
+
+  // [Phase 3 / Task 1] Virality Score — Claude 예상 도달 점수
+  /** 0-100. 높을수록 viral 가능성 큼. */
+  virality_score?: number;
+  /** 점수 산정 근거(짧은 한국어 문장 1~3개) */
+  virality_reasons?: string[];
+  /** 예상 도달 — low(<40) / medium(40-70) / high(>70) */
+  predicted_reach?: 'low' | 'medium' | 'high';
 }
 
 export interface ProgressEvent {
