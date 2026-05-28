@@ -52,6 +52,22 @@ function migrate(db: Database.Database) {
       is_manual   INTEGER DEFAULT 0,
       created_at  TEXT DEFAULT (datetime('now'))
     );
+
+    -- Phase 4 — 채널 brand template (로고/색/폰트/CTA를 채널 단위로 관리)
+    -- Phase 1의 templates 테이블과 별개. default_template_id로 약하게 link.
+    CREATE TABLE IF NOT EXISTS brand_profiles (
+      id                  TEXT PRIMARY KEY,
+      name                TEXT NOT NULL,
+      logo_path           TEXT,
+      primary_color       TEXT,
+      secondary_color     TEXT,
+      font_name           TEXT,
+      cta_text            TEXT,
+      default_template_id TEXT,
+      is_active           INTEGER DEFAULT 0,
+      created_at          TEXT DEFAULT (datetime('now')),
+      updated_at          TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // 기존 DB에 workspace_path 컬럼 없으면 추가 (안전한 마이그레이션)
