@@ -79,7 +79,15 @@ export async function extractAudio(projectId: string): Promise<string> {
   });
 }
 
-export type LayoutStyle = 'letterbox' | 'crop_vertical';
+export type LayoutStyle = 'letterbox' | 'crop_vertical' | 'custom_background';
+
+/** custom_background 입력 종류 (확장자 기반 자동 감지). */
+function detectBackgroundKind(p: string): 'image' | 'video' | null {
+  const ext = path.extname(p).toLowerCase();
+  if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) return 'image';
+  if (['.mp4', '.mov', '.webm', '.mkv'].includes(ext)) return 'video';
+  return null;
+}
 
 export interface TitleOverlay {
   text: string;
@@ -116,6 +124,12 @@ export interface ClipOptions {
   bgOffsetX?: number;
   /** 배경 세로 오프셋 (1920 기준 px, ±960 범위) — crop_vertical 모드에서만 적용 */
   bgOffsetY?: number;
+  /**
+   * custom_background 모드에서 사용할 배경 파일 (이미지/영상) 절대경로.
+   * 확장자로 자동 감지 (jpg/png/webp = image, mp4/mov/webm/mkv = video).
+   * layout이 'custom_background'가 아니면 무시.
+   */
+  customBackgroundPath?: string;
   /**
    * 제목 burn-in (drawtext) — 한국어 폰트가 ASS subtitle filter에서 깨지는 문제 회피.
    * fontfile 절대경로를 직접 사용해 확실히 렌더.
@@ -158,10 +172,31 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
     detail: `${opts.clipIndex + 1}/${opts.totalClips}`,
   });
 
-  return new Promise((resolve, reject) => {
-    let vf = '';
+  // custom_background 입력 검증 — 파일이 실제 존재하고 확장자가 지원되는지 확인.
+  // 미존재/미지원 시 letterbox로 fallback (사용자에게 부드러운 degrade).
+  const useCustomBg =
+    opts.layout === 'custom_background' &&
+    !!opts.customBackgroundPath &&
+    fs.existsSync(opts.customBackgroundPath);
+  const bgKind = useCustomBg ? detectBackgroundKind(opts.customBackgroundPath!) : null;
+  if (opts.layout === 'custom_background' && (!useCustomBg || !bgKind)) {
+    console.warn(
+      `[generateClip] custom_background fallback → letterbox (path=${opts.customBackgroundPath}, exists=${useCustomBg}, kind=${bgKind})`,
+    );
+  }
+  const effectiveLayout: LayoutStyle =
+    opts.layout === 'custom_background' && useCustomBg && bgKind
+      ? 'custom_background'
+      : opts.layout === 'custom_background'
+        ? 'letterbox'
+        : opts.layout;
 
-    if (opts.layout === 'crop_vertical') {
+  return new Promise((resolve, reject) => {
+    // sourceVf: 원본 video를 1080x1920 캔버스에 어떻게 배치할지 결정하는 chain.
+    // custom_background 모드에서는 캔버스 대신 source만 스케일하고, 별도 입력의 bg와 overlay.
+    let sourceVf = '';
+
+    if (effectiveLayout === 'crop_vertical') {
       // 1. 입력을 1080×1920 9:16 영역에 cover (object-fit: cover와 동일)
       // 2. bgZoom으로 추가 확대
       // 3. bgOffsetX/Y 만큼 view window 이동
@@ -175,16 +210,24 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
       // 미리보기 translate(OX%, OY%) → 실제 1080×1920 캔버스에서 OX px 이동 → input에서 OX * crop_width/1080 이동
       // 반대 방향으로 crop 위치 조정 → ` - ox*crop_width/1080`
       // bgZoom: scale * Z 적용 후 동일 비율로 crop
-      vf =
+      sourceVf =
         `scale=iw*${z}:ih*${z}` +
         `,crop=ih*9/16:ih:` +
         `'(iw-ih*9/16)/2 - (${ox})*ih*9/16/1080':` +
         `'0 - (${oy})*ih/1920'` +
         `,scale=${OUTPUT_W}:${OUTPUT_H}`;
+    } else if (effectiveLayout === 'custom_background') {
+      // custom_background: 원본 영상을 1080 너비 기준 비율 유지 스케일 (letterbox와 동일).
+      // 이후 별도 bg input과 overlay (filter_complex)로 합성.
+      sourceVf = `scale=${OUTPUT_W}:-2:force_original_aspect_ratio=decrease`;
     } else {
       // letterbox: 1080 너비로 스케일 + 1080x1920 캔버스 패딩 (검정 배경)
-      vf = `scale=${OUTPUT_W}:-2:force_original_aspect_ratio=decrease,pad=${OUTPUT_W}:${OUTPUT_H}:0:${VIDEO_Y}:black`;
+      sourceVf = `scale=${OUTPUT_W}:-2:force_original_aspect_ratio=decrease,pad=${OUTPUT_W}:${OUTPUT_H}:0:${VIDEO_Y}:black`;
     }
+
+    // canvasVf: 캔버스(1080x1920) 위에 자막/제목/배속 등 공통 effects.
+    // custom_background는 sourceVf 단계 후 overlay로 캔버스를 만들고 → canvasVf를 적용.
+    let canvasVf = '';
 
     // 자막 + 채널명을 ASS 파일 하나로 burn-in (title은 drawtext로 별도 처리)
     if (opts.subtitlePath && fs.existsSync(opts.subtitlePath)) {
@@ -202,7 +245,7 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
         ? bundledFontsDir
         : systemFontsDir;
       const fontsdir = ffmpegEscapePath(fontsdirRaw);
-      vf += `,subtitles='${escapedPath}':fontsdir='${fontsdir}':charenc=UTF-8`;
+      canvasVf += (canvasVf ? ',' : '') + `subtitles='${escapedPath}':fontsdir='${fontsdir}':charenc=UTF-8`;
     }
 
     // 제목 burn-in — drawtext filter (fontfile 절대경로 사용)
@@ -239,8 +282,9 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
           } else {
             xExpr = `${t.x}${dx >= 0 ? '+' : ''}${dx}`;
           }
-          vf +=
-            `,drawtext=fontfile='${fontFile}'` +
+          canvasVf +=
+            (canvasVf ? ',' : '') +
+            `drawtext=fontfile='${fontFile}'` +
             `:text='${escaped}'` +
             `:x='${xExpr}'` +
             `:y=${yPos}` +
@@ -254,23 +298,51 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
 
     // 배속 처리 (1.0이 아닐 때만 setpts/atempo 추가).
     // 자막/타이틀은 위 vf chain에서 이미 frame에 burn-in 됐으므로,
-    // setpts는 vf 마지막에 붙여서 frame 표시 속도만 조절 → 자막도 같이 빨라짐.
+    // setpts는 chain 마지막에 붙여서 frame 표시 속도만 조절 → 자막도 같이 빨라짐.
     const speed = clampSpeed(opts.playbackSpeed);
-    let finalVf = vf;
     if (speed !== 1) {
-      finalVf += `,setpts=PTS/${speed}`;
+      canvasVf += (canvasVf ? ',' : '') + `setpts=PTS/${speed}`;
     }
 
     // ⚠️ -ss를 input 앞에 두면 ffmpeg가 PTS를 리셋하지 않아 자막이 영상 시간과
     // 안 맞는 문제(첫 자막에서 멈춤)가 발생함. input 뒤로 옮겨서 output seek로
     // 처리하면 PTS가 0부터 다시 시작되어 자막(클립 상대 시간)과 정확히 매칭됨.
     const clipDuration = opts.endTime - opts.startTime;
-    const args: string[] = [
-      '-i', pp.source,
-      '-ss', opts.startTime.toString(),
-      '-t', clipDuration.toString(),
-      '-vf', finalVf,
-    ];
+    const args: string[] = [];
+
+    if (effectiveLayout === 'custom_background' && opts.customBackgroundPath && bgKind) {
+      // 입력 순서: [0] bg (image: -loop 1 / video: -stream_loop -1), [1] source video (with -ss/-t)
+      // 영상 길이만큼 bg를 늘려야 하므로 -t를 bg에도 적용.
+      if (bgKind === 'image') {
+        args.push('-loop', '1', '-t', clipDuration.toString(), '-i', opts.customBackgroundPath);
+      } else {
+        args.push('-stream_loop', '-1', '-t', clipDuration.toString(), '-i', opts.customBackgroundPath);
+      }
+      args.push('-i', pp.source, '-ss', opts.startTime.toString(), '-t', clipDuration.toString());
+
+      // filter_complex:
+      //   [0:v] bg → 1080x1920 cover-fit
+      //   [1:v] source → sourceVf (이미 1080 비율 유지 스케일)
+      //   [bg][fg] overlay center horizontal, top y=VIDEO_Y (letterbox 정렬과 동일)
+      //   [overlayed] canvasVf → 자막/제목/setpts (있을 때만)
+      const bgChain =
+        `[0:v]scale=${OUTPUT_W}:${OUTPUT_H}:force_original_aspect_ratio=increase,crop=${OUTPUT_W}:${OUTPUT_H},setsar=1[bg]`;
+      const fgChain = `[1:v]${sourceVf},setsar=1[fg]`;
+      const overlayOut = canvasVf ? '[overlayed]' : '[outv]';
+      const overlayChain = `[bg][fg]overlay=(W-w)/2:${VIDEO_Y}${overlayOut}`;
+      const tailChain = canvasVf ? `;[overlayed]${canvasVf}[outv]` : '';
+      const filterComplex = `${bgChain};${fgChain};${overlayChain}${tailChain}`;
+
+      args.push(
+        '-filter_complex', filterComplex,
+        '-map', '[outv]',
+        '-map', '1:a?',  // source의 오디오만 사용 (bg 오디오 무시)
+      );
+    } else {
+      // 일반 경로 (letterbox / crop_vertical): -i source + -vf
+      const finalVf = canvasVf ? `${sourceVf},${canvasVf}` : sourceVf;
+      args.push('-i', pp.source, '-ss', opts.startTime.toString(), '-t', clipDuration.toString(), '-vf', finalVf);
+    }
     // 배속이 1.0이 아니면 audio filter도 적용 (atempo)
     if (speed !== 1) {
       args.push('-af', `atempo=${speed}`);
@@ -300,7 +372,9 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
           /* ignore */
         }
         console.error(`[ffmpeg] clip ${opts.clipId} failed (code ${code})`);
-        console.error(`[ffmpeg] vf: ${vf}`);
+        console.error(`[ffmpeg] sourceVf: ${sourceVf}`);
+        console.error(`[ffmpeg] canvasVf: ${canvasVf}`);
+        console.error(`[ffmpeg] layout: ${effectiveLayout}`);
         console.error(`[ffmpeg] stderr (last 2000 chars):`);
         console.error(stderr.slice(-2000));
         // 사용자 친화 메시지로 변환

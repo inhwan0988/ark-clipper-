@@ -49,6 +49,8 @@ interface HookCustomization {
   bgOffsetY?: number;
   /** 배속 (1.0 ~ 2.0). 출력 mp4에 영구 적용. */
   playbackSpeed?: number;
+  /** custom_background 모드에서 사용할 배경 파일 (이미지/영상) 절대경로 (hook별 독립). */
+  customBackgroundPath?: string;
 }
 
 interface ClipRequest {
@@ -70,11 +72,13 @@ interface ClipRequest {
   bgZoom?: number;
   bgOffsetX?: number;
   bgOffsetY?: number;
+  /** custom_background 모드 default 경로 (hook customization에 없을 때 fallback). */
+  customBackgroundPath?: string;
 }
 
 export async function POST(req: Request) {
   const body = await req.json() as ClipRequest;
-  const { projectId, selectedHooks, layout = 'letterbox', title, channel, subtitle, bgZoom, bgOffsetX, bgOffsetY } = body;
+  const { projectId, selectedHooks, layout = 'letterbox', title, channel, subtitle, bgZoom, bgOffsetX, bgOffsetY, customBackgroundPath } = body;
 
   const project = getProject(projectId);
   if (!project) {
@@ -187,24 +191,30 @@ export async function POST(req: Request) {
         : subtitle;
 
       // ASS는 channel+subtitle만. title은 drawtext로 별도 (한국어 폰트 보장)
+      // subtitle-gen은 letterbox|crop_vertical만 받음 — custom_background는 letterbox와
+      // 시각적으로 동일한 자막 정렬을 쓰므로 letterbox로 mapping.
+      const subtitleLayout: 'letterbox' | 'crop_vertical' =
+        clipLayout === 'crop_vertical' ? 'crop_vertical' : 'letterbox';
       const subtitlePath = generateSubtitleFile(
         transcript,
         hook.start_time,
         hook.end_time,
         pp.clips,
         clipId,
-        clipLayout,
+        subtitleLayout,
         undefined,
         channelOverlay,
         subtitleConfig
       );
 
       // title drawtext payload — hook.customization 우선
+      // custom_background는 letterbox와 동일한 title 좌표계 사용 (titleX/titleY).
+      const useCropTitlePos = clipLayout === 'crop_vertical';
       const titleX = cust
-        ? (clipLayout === 'crop_vertical' ? cust.titleXCrop : cust.titleX) ?? 540
+        ? (useCropTitlePos ? cust.titleXCrop : cust.titleX) ?? 540
         : hook.titleX ?? title?.x ?? 540;
       const titleY = cust
-        ? (clipLayout === 'crop_vertical' ? cust.titleYCrop : cust.titleY) ?? 180
+        ? (useCropTitlePos ? cust.titleYCrop : cust.titleY) ?? 180
         : hook.titleY ?? title?.y ?? 180;
       const titleDrawtext = cust
         ? {
@@ -246,6 +256,10 @@ export async function POST(req: Request) {
         bgOffsetY: cust?.bgOffsetY ?? bgOffsetY,
         // 배속을 ffmpeg에 전달 → 출력 mp4에 영구 적용
         playbackSpeed: cust?.playbackSpeed ?? 1,
+        // custom_background 파일 경로 (hook 우선, payload default fallback).
+        // 실제 사용은 ffmpeg-ops.ts에서 layout === 'custom_background'일 때만.
+        customBackgroundPath:
+          cust?.customBackgroundPath ?? customBackgroundPath,
         titleDrawtext,
       });
 
