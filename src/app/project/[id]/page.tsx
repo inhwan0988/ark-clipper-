@@ -8,6 +8,7 @@ import { OutputGallery } from '@/components/output-gallery';
 import { ClipEditorV2 } from '@/components/clip-editor-v2';
 import { ClipSidebar } from '@/components/clip-sidebar';
 import { getStoredApiKey, getStoredOpenAiKey } from '@/components/api-key-settings';
+import ErrorWithHint from '@/components/error-with-hint';
 import { triggerDownload } from '@/lib/trigger-download';
 import type { ClipCustomization } from '@/components/clip-customizer';
 import type { Project, Clip, HookSuggestion, Transcript } from '@/types';
@@ -499,9 +500,11 @@ export default function ProjectPage() {
           }`}
         >
           {error && (
-            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-              {error}
-            </div>
+            <ErrorWithHint
+              message={error}
+              route={`/project/${id}`}
+              onDismiss={() => setError('')}
+            />
           )}
 
           {phase === 'idle' && project?.status === 'created' && (

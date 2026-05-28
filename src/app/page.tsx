@@ -6,6 +6,7 @@ import { UrlInput } from '@/components/url-input';
 import { VideoPreview } from '@/components/video-preview';
 import { ApiKeySettings, OpenAiKeySettings } from '@/components/api-key-settings';
 import { ApiStoragePathSettings, getStoredStoragePath } from '@/components/storage-path-settings';
+import { ErrorReportingSettings } from '@/components/error-reporting-settings';
 import type { Project } from '@/types';
 
 export default function HomePage() {
@@ -92,6 +93,7 @@ export default function HomePage() {
             <ApiKeySettings />
             <OpenAiKeySettings />
             <ApiStoragePathSettings />
+            <ErrorReportingSettings />
           </div>
 
           {/* URL Input */}
