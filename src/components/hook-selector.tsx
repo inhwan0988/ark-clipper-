@@ -69,7 +69,7 @@ export function HookSelector({
     endTime: number;
     title: string;
     hashtags: string[];
-    layout: 'letterbox' | 'crop_vertical';
+    layout: 'letterbox' | 'crop_vertical' | 'custom_background';
   }) {
     setHooks((prev) => prev.map((h, i) => i === idx ? {
       ...h,
