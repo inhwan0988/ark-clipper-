@@ -270,7 +270,12 @@ function splitSegmentByPauses(
   }
   type Group = { start: number; end: number; words: Array<{ word: string; start: number; end: number }> };
   const groups: Group[] = [];
-  let curr: Group = { start: seg.words[0].start, end: seg.words[0].end, words: [seg.words[0]] };
+  // 첫 group은 segment.start 사용 (words[0].start가 더 늦으면 자막이 살짝 늦게 뜸 — 회피)
+  let curr: Group = {
+    start: Math.min(seg.start, seg.words[0].start),
+    end: seg.words[0].end,
+    words: [seg.words[0]],
+  };
   for (let i = 1; i < seg.words.length; i++) {
     const w = seg.words[i];
     if (w.start - curr.end > gapThreshold) {

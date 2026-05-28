@@ -95,6 +95,7 @@ export async function POST(req: Request) {
   updateProject(projectId, { status: 'clipping' });
 
   const results: Array<{ clipId: string; outputPath: string; title: string }> = [];
+  const failures: Array<{ clipId: string; title: string; error: string }> = [];
 
   // 방어층: 길이 < 2초이거나 시간이 비정상이면 skip (의미 없는 클립 방지)
   const validHooks = selectedHooks.filter((hook) => {
@@ -251,19 +252,46 @@ export async function POST(req: Request) {
       updateClip(clipId, { status: 'complete', output_path: outputPath });
       results.push({ clipId, outputPath, title: hook.title });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : '클립 생성 실패';
       updateClip(clipId, { status: 'error' });
       console.error(`Clip ${clipId} failed:`, err);
+      failures.push({ clipId, title: hook.title, error: msg });
     }
   }
+
+  // 부분 실패 노출 — 사용자가 "왜 적게 나왔지?" 혼란 방지
+  const totalRequested = selectedHooks.length;
+  const succeeded = results.length;
+  const failed = failures.length;
+
+  if (succeeded === 0) {
+    emitProgress({
+      projectId,
+      step: 'clip',
+      status: 'error',
+      progress: 100,
+      message: `클립 생성 실패 — ${failed}개 모두 오류`,
+    });
+    updateProject(projectId, { status: 'error' });
+    return NextResponse.json(
+      { results: [], failures, message: `${failed}개 클립 모두 실패` },
+      { status: 500 },
+    );
+  }
+
+  const message =
+    failed > 0
+      ? `클립 ${succeeded}개 완료, ${failed}개 실패 (총 ${totalRequested}개 요청)`
+      : `클립 생성 완료 - ${succeeded}개 쇼츠`;
 
   emitProgress({
     projectId,
     step: 'clip',
     status: 'complete',
     progress: 100,
-    message: `클립 생성 완료 - ${results.length}개 쇼츠`,
+    message,
   });
 
   updateProject(projectId, { status: 'complete' });
-  return NextResponse.json(results);
+  return NextResponse.json({ results, failures, totalRequested });
 }
