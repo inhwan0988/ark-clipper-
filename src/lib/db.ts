@@ -60,6 +60,22 @@ function migrate(db: Database.Database) {
       created_at  TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- Phase 4 — 채널 brand template (로고/색/폰트/CTA를 채널 단위로 관리)
+    -- Phase 1의 templates 테이블과 별개. default_template_id로 약하게 link.
+    CREATE TABLE IF NOT EXISTS brand_profiles (
+      id                  TEXT PRIMARY KEY,
+      name                TEXT NOT NULL,
+      logo_path           TEXT,
+      primary_color       TEXT,
+      secondary_color     TEXT,
+      font_name           TEXT,
+      cta_text            TEXT,
+      default_template_id TEXT,
+      is_active           INTEGER DEFAULT 0,
+      created_at          TEXT DEFAULT (datetime('now')),
+      updated_at          TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // 기존 DB에 workspace_path 컬럼 없으면 추가 (안전한 마이그레이션)
@@ -175,7 +191,9 @@ export function deleteClipsByProject(projectId: string): void {
   db.prepare('DELETE FROM clips WHERE project_id = ?').run(projectId);
 }
 
-// Templates — 자막+타이틀+채널+layout 설정 묶음. ClipCustomization JSON 그대로 저장.
+// ============================================================================
+// Phase 1 — Templates (자막+타이틀+채널+layout 설정 묶음. ClipCustomization JSON 저장)
+// ============================================================================
 export function createTemplate(id: string, name: string, settings: string): Template {
   const db = getDb();
   db.prepare(
@@ -217,4 +235,98 @@ export function updateTemplate(
 export function deleteTemplate(id: string): void {
   const db = getDb();
   db.prepare('DELETE FROM templates WHERE id = ?').run(id);
+}
+
+// ============================================================================
+// Phase 4 — Brand Profiles (채널 단위 로고/색/폰트/CTA. Templates와 별개)
+// ============================================================================
+
+export interface BrandProfile {
+  id: string;
+  name: string;
+  logo_path: string | null;
+  primary_color: string | null;
+  secondary_color: string | null;
+  font_name: string | null;
+  cta_text: string | null;
+  default_template_id: string | null;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type BrandProfileInput = Omit<BrandProfile, 'created_at' | 'updated_at' | 'is_active'> & {
+  is_active?: number;
+};
+
+export function createBrandProfile(input: BrandProfileInput): BrandProfile {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO brand_profiles
+     (id, name, logo_path, primary_color, secondary_color, font_name, cta_text, default_template_id, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.id,
+    input.name,
+    input.logo_path ?? null,
+    input.primary_color ?? null,
+    input.secondary_color ?? null,
+    input.font_name ?? null,
+    input.cta_text ?? null,
+    input.default_template_id ?? null,
+    input.is_active ?? 0,
+  );
+  return getBrandProfile(input.id)!;
+}
+
+export function getBrandProfile(id: string): BrandProfile | null {
+  const db = getDb();
+  return db.prepare('SELECT * FROM brand_profiles WHERE id = ?').get(id) as BrandProfile | null;
+}
+
+export function listBrandProfiles(): BrandProfile[] {
+  const db = getDb();
+  return db
+    .prepare('SELECT * FROM brand_profiles ORDER BY is_active DESC, created_at DESC')
+    .all() as BrandProfile[];
+}
+
+export function getActiveBrandProfile(): BrandProfile | null {
+  const db = getDb();
+  return db
+    .prepare('SELECT * FROM brand_profiles WHERE is_active = 1 LIMIT 1')
+    .get() as BrandProfile | null;
+}
+
+export function updateBrandProfile(
+  id: string,
+  fields: Partial<Omit<BrandProfile, 'id' | 'created_at' | 'updated_at'>>,
+): void {
+  const db = getDb();
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const [k, v] of Object.entries(fields)) {
+    sets.push(`${k} = ?`);
+    values.push(v);
+  }
+  if (sets.length === 0) return;
+  sets.push("updated_at = datetime('now')");
+  values.push(id);
+  db.prepare(`UPDATE brand_profiles SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+}
+
+export function setActiveBrandProfile(id: string): void {
+  const db = getDb();
+  const tx = db.transaction((targetId: string) => {
+    db.prepare('UPDATE brand_profiles SET is_active = 0').run();
+    db.prepare(
+      "UPDATE brand_profiles SET is_active = 1, updated_at = datetime('now') WHERE id = ?",
+    ).run(targetId);
+  });
+  tx(id);
+}
+
+export function deleteBrandProfile(id: string): void {
+  const db = getDb();
+  db.prepare('DELETE FROM brand_profiles WHERE id = ?').run(id);
 }
