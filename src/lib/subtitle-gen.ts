@@ -252,6 +252,44 @@ function splitKoreanText(text: string, maxChars: number = 12): string[] {
   return lines;
 }
 
+/**
+ * Whisper segment를 word-level gap 기준으로 분할 — 무음(pause) 구간에 자막이 그대로 떠 있는 문제 해결.
+ *
+ * Whisper segment는 한 호흡 단위라 안에 0.5~3초짜리 무음이 자주 들어감.
+ * 그 동안에도 자막이 계속 표시되면 시청자 입장에서 어색.
+ *
+ * 알고리즘: 연속된 word를 모으다가 다음 word.start - currentEnd > gapThreshold면 새 group.
+ * words가 없으면 원본 segment 그대로 반환 (구버전 Whisper 호환).
+ */
+function splitSegmentByPauses(
+  seg: { start: number; end: number; text: string; words?: Array<{ word: string; start: number; end: number }> },
+  gapThreshold: number,
+): Array<{ start: number; end: number; text: string }> {
+  if (!seg.words || seg.words.length === 0) {
+    return [{ start: seg.start, end: seg.end, text: seg.text }];
+  }
+  type Group = { start: number; end: number; words: Array<{ word: string; start: number; end: number }> };
+  const groups: Group[] = [];
+  let curr: Group = { start: seg.words[0].start, end: seg.words[0].end, words: [seg.words[0]] };
+  for (let i = 1; i < seg.words.length; i++) {
+    const w = seg.words[i];
+    if (w.start - curr.end > gapThreshold) {
+      groups.push(curr);
+      curr = { start: w.start, end: w.end, words: [w] };
+    } else {
+      curr.end = w.end;
+      curr.words.push(w);
+    }
+  }
+  groups.push(curr);
+  return groups.map((g) => ({
+    start: g.start,
+    end: g.end,
+    // word.word는 보통 앞에 공백 포함 ("the" / " the") — join + trim + 중복공백 제거
+    text: g.words.map((w) => w.word).join('').replace(/\s+/g, ' ').trim(),
+  }));
+}
+
 export function generateSubtitleFile(
   transcript: Transcript | null,
   startTime: number,
@@ -276,7 +314,11 @@ export function generateSubtitleFile(
       (seg) => seg.end > startTime && seg.start < endTime
     );
 
-    for (const seg of relevantSegments) {
+    // segment 안의 무음(pause)에서 자막이 그대로 떠 있는 문제 방지 — word-level gap 기준으로 분할
+    const PAUSE_GAP_SEC = 0.7;
+    const subSegments = relevantSegments.flatMap((seg) => splitSegmentByPauses(seg, PAUSE_GAP_SEC));
+
+    for (const seg of subSegments) {
       const relStart = Math.max(0, seg.start - startTime);
       const relEnd = Math.min(endTime - startTime, seg.end - startTime);
       const segDuration = relEnd - relStart;
