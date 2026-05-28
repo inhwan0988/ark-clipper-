@@ -14,7 +14,7 @@ interface Props {
   endTime: number;
   title: string;
   hashtags?: string[];
-  layout?: 'letterbox' | 'crop_vertical';
+  layout?: 'letterbox' | 'crop_vertical' | 'custom_background';
   transcript?: Transcript | null;
   /** 프로젝트 ID (transcript 미전달 시 fallback fetch에 사용) */
   projectId?: string;
@@ -31,7 +31,7 @@ interface Props {
     endTime: number;
     title: string;
     hashtags: string[];
-    layout: 'letterbox' | 'crop_vertical';
+    layout: 'letterbox' | 'crop_vertical' | 'custom_background';
   }) => void;
   onRevert?: () => void;
   customization: ClipCustomization;
@@ -109,7 +109,7 @@ export function ClipEditorV2({
   const [draftStartTime, setDraftStartTime] = useState(propStartTime);
   const [draftEndTime, setDraftEndTime] = useState(propEndTime);
   const [draftTitle, setDraftTitle] = useState(propTitle);
-  const [draftLayout, setDraftLayout] = useState<'letterbox' | 'crop_vertical'>(
+  const [draftLayout, setDraftLayout] = useState<'letterbox' | 'crop_vertical' | 'custom_background'>(
     propLayout || customization.layout,
   );
   const [activeTab, setActiveTab] = useState<TabKey>('title');
@@ -245,7 +245,7 @@ export function ClipEditorV2({
     draftStartTime: number;
     draftEndTime: number;
     draftTitle: string;
-    draftLayout: 'letterbox' | 'crop_vertical';
+    draftLayout: 'letterbox' | 'crop_vertical' | 'custom_background';
     customization: ClipCustomization;
   };
   const [history, setHistory] = useState<Snapshot[]>([]);
@@ -1184,6 +1184,7 @@ export function ClipEditorV2({
                 setDraftLayout={setDraftLayout}
                 customization={customization}
                 updateCust={updateCust}
+                projectId={projectId}
               />
             )}
             {activeTab === 'subtitle' && (
@@ -1766,12 +1767,63 @@ function LayoutPanel({
   setDraftLayout,
   customization,
   updateCust,
+  projectId,
 }: {
-  draftLayout: 'letterbox' | 'crop_vertical';
-  setDraftLayout: (l: 'letterbox' | 'crop_vertical') => void;
+  draftLayout: 'letterbox' | 'crop_vertical' | 'custom_background';
+  setDraftLayout: (l: 'letterbox' | 'crop_vertical' | 'custom_background') => void;
   customization: ClipCustomization;
   updateCust: (p: Partial<ClipCustomization>) => void;
+  projectId?: string;
 }) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleBackgroundUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = ''; // 같은 파일 재선택 가능하도록 reset
+    if (!f) return;
+    if (!projectId) {
+      setUploadError('프로젝트 ID가 없습니다.');
+      return;
+    }
+    // 100MB 사전 체크 — 서버에서도 검증하지만 미리 안내
+    if (f.size > 100 * 1024 * 1024) {
+      setUploadError(`파일이 너무 큽니다 (${Math.round(f.size / 1024 / 1024)}MB). 최대 100MB.`);
+      return;
+    }
+    // MIME 사전 체크
+    const isImage = f.type.startsWith('image/');
+    const isVideo = f.type.startsWith('video/');
+    if (!isImage && !isVideo) {
+      setUploadError('이미지(jpg/png/webp) 또는 영상(mp4/mov/webm)만 업로드 가능합니다.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError('');
+    try {
+      const fd = new FormData();
+      fd.append('projectId', projectId);
+      fd.append('file', f);
+      const res = await fetch('/api/projects/upload-background', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { path: string; kind: 'image' | 'video' };
+      updateCust({ customBackgroundPath: data.path });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : '업로드 실패');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const bgFilename = customization.customBackgroundPath
+    ? customization.customBackgroundPath.split(/[\\/]/).pop()
+    : null;
+
   return (
     <div className="space-y-4">
       <Field label="레이아웃">
@@ -1788,8 +1840,51 @@ function LayoutPanel({
             selected={draftLayout === 'crop_vertical'}
             onSelect={() => setDraftLayout('crop_vertical')}
           />
+          <LayoutOption
+            name="custom_background"
+            label="배경 이미지/영상 (사용자가 업로드한 배경 위에 원본 영상 오버레이)"
+            selected={draftLayout === 'custom_background'}
+            onSelect={() => setDraftLayout('custom_background')}
+          />
         </div>
       </Field>
+
+      {/* custom_background 모드에서만 — 배경 파일 picker */}
+      {draftLayout === 'custom_background' && (
+        <div className="space-y-2.5 pt-2 border-t border-[#243a5c]">
+          <div className="text-[11px] text-gray-500 -mb-1">
+            이미지: jpg/png/webp · 영상: mp4/mov/webm · 최대 100MB
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm,video/x-matroska"
+            onChange={handleBackgroundUpload}
+            className="hidden"
+          />
+          <button
+            type="button"
+            disabled={uploading || !projectId}
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full px-3 py-2 bg-[#1C4D8D] hover:bg-[#0F2854] text-white rounded text-xs transition disabled:opacity-50"
+          >
+            {uploading ? '업로드 중...' : (bgFilename ? '배경 파일 교체' : '배경 파일 선택')}
+          </button>
+          {bgFilename && (
+            <div className="text-[11px] text-gray-400 break-all bg-[#0a1428] border border-[#243a5c] rounded px-2 py-1.5">
+              현재: {bgFilename}
+            </div>
+          )}
+          {uploadError && (
+            <div className="text-[11px] text-red-400">{uploadError}</div>
+          )}
+          {!customization.customBackgroundPath && !uploading && (
+            <div className="text-[11px] text-yellow-400/80">
+              배경 파일을 업로드해야 이 모드가 작동합니다. 미선택 시 레터박스로 fallback됩니다.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 세로 크롭 모드에서만 — 배경 영상 zoom/pan */}
       {draftLayout === 'crop_vertical' && (
@@ -2273,7 +2368,11 @@ function LayoutOption({
     >
       <div className="text-xs font-bold mb-0.5">
         {selected && '✓ '}
-        {name === 'letterbox' ? '레터박스' : '세로 크롭'}
+        {name === 'letterbox'
+          ? '레터박스'
+          : name === 'crop_vertical'
+            ? '세로 크롭'
+            : '배경 이미지/영상'}
       </div>
       <div className="text-[11px] text-gray-500">{label}</div>
     </button>

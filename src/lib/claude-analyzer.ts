@@ -3,7 +3,7 @@ import { emitProgress } from './progress-bus';
 import { updateProject, getProjectPaths } from './db';
 import { createWithFallback } from './claude-models';
 import fs from 'fs';
-import type { Transcript, HookSuggestion } from '@/types';
+import type { Transcript, TranscriptSegment, HookSuggestion } from '@/types';
 
 function buildSystemPrompt(clipCount: number): string {
   return `당신은 100만 조회수 한국 유튜브 쇼츠를 100개 이상 만든 카피라이팅 최고 전문가입니다.
@@ -289,7 +289,38 @@ export async function analyzeHooks(
     return true;
   });
 
-  const hooks = validHooks.slice(0, targetCount);
+  let hooks = validHooks.slice(0, targetCount);
+
+  // [Phase 3 / Task 1] Virality Score — best-effort 병렬 계산
+  try {
+    emitProgress({
+      projectId,
+      step: 'analyze',
+      status: 'running',
+      progress: 80,
+      message: 'Virality 점수 계산 중...',
+    });
+    const viralities = await Promise.all(
+      hooks.map((h) =>
+        calculateViralityScore(h, transcript, apiKey).catch((e) => {
+          console.warn('[virality] hook scoring failed:', e instanceof Error ? e.message : e);
+          return null;
+        }),
+      ),
+    );
+    hooks = hooks.map((h, i) => {
+      const v = viralities[i];
+      if (!v) return h;
+      return {
+        ...h,
+        virality_score: v.score,
+        virality_reasons: v.reasons,
+        predicted_reach: v.predictedReach,
+      };
+    });
+  } catch (e) {
+    console.warn('[virality] batch failed (non-fatal):', e instanceof Error ? e.message : e);
+  }
 
   fs.writeFileSync(pp.hooks, JSON.stringify(hooks, null, 2), 'utf-8');
 
@@ -388,4 +419,264 @@ function formatTime(seconds: number): string {
   const s = Math.floor(seconds % 60);
   if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [Phase 3 / Task 1] Virality Score 계산
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ViralityResult {
+  score: number;                                  // 0-100
+  reasons: string[];                              // 한국어 짧은 근거 1~3개
+  predictedReach: 'low' | 'medium' | 'high';      // <40 / 40-70 / >70
+}
+
+/**
+ * 단일 hook + 해당 클립 구간의 transcript 일부를 Claude에 넘겨
+ * "예상 도달 점수"를 0-100으로 산정. Heuristic baseline + Claude AI 결합.
+ *
+ *  - score: hook strength(40) + 길이 적정성(20, 45~75초 최적) + 감정 강도(40)
+ *  - reasons: 점수 근거 짧은 한국어 1~3개
+ *  - predictedReach: <40 low / 40~70 medium / >70 high
+ *
+ * 비용: 1 hook당 ~400 토큰. analyzeHooks가 결과를 hook 객체에 캐시.
+ */
+export async function calculateViralityScore(
+  hook: HookSuggestion,
+  transcript: Transcript,
+  apiKey: string,
+): Promise<ViralityResult> {
+  const lenSec = hook.end_time - hook.start_time;
+  let lenScore = 0;
+  if (lenSec >= 45 && lenSec <= 75) lenScore = 30;
+  else if (lenSec >= 30 && lenSec <= 90) lenScore = 22;
+  else lenScore = 10;
+  const baseScore = Math.round(lenScore + (hook.confidence ?? 0.5) * 50);
+
+  if (!apiKey || !apiKey.trim()) {
+    const score = Math.max(0, Math.min(100, baseScore));
+    return {
+      score,
+      reasons: ['휴리스틱(길이+신뢰도) 기반 추정 점수입니다.'],
+      predictedReach: score < 40 ? 'low' : score > 70 ? 'high' : 'medium',
+    };
+  }
+
+  const inRange = transcript.segments
+    .filter((seg) => seg.end > hook.start_time && seg.start < hook.end_time)
+    .map((s) => s.text)
+    .join(' ')
+    .slice(0, 700);
+
+  const client = new Anthropic({ apiKey: apiKey.trim(), maxRetries: 2, timeout: 60_000 });
+  const systemPrompt = `당신은 한국 유튜브 쇼츠 성과를 예측하는 분석가입니다.
+주어진 쇼츠 후보(제목 + 대사)에 대해 0-100 점수를 매깁니다.
+
+평가 기준 (가중치):
+1. Hook strength (40점) — 첫 3초 임팩트, 호기심 자극, 클릭 유발
+2. 길이 적정성 (20점) — 45~75초가 최적
+3. 감정 강도 (40점) — 놀라움/유머/충격/공감/실용 가치
+
+JSON만 출력:
+{
+  "score": <0-100 정수>,
+  "reasons": [<짧은 한국어 근거 1~3개, 각 30자 이내>],
+  "predictedReach": "low" | "medium" | "high"
+}`;
+
+  try {
+    const response = await createWithFallback(client, {
+      max_tokens: 400,
+      temperature: 0.3,
+      system: systemPrompt,
+      messages: [{
+        role: 'user',
+        content: `제목: ${hook.title}\n길이: ${lenSec.toFixed(1)}초\n신뢰도: ${(hook.confidence ?? 0).toFixed(2)}\n대사:\n${inRange || '(없음)'}\n\nJSON만 출력.`,
+      }],
+    });
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('no json');
+    const parsed = JSON.parse(jsonMatch[0]) as Partial<ViralityResult> & { score?: unknown };
+    const rawScore = typeof parsed.score === 'number'
+      ? parsed.score
+      : typeof parsed.score === 'string' ? parseFloat(parsed.score as string) : NaN;
+    const score = Math.max(0, Math.min(100, Math.round(isFinite(rawScore) ? rawScore : baseScore)));
+    const reasons = Array.isArray(parsed.reasons)
+      ? (parsed.reasons.filter((r) => typeof r === 'string') as string[]).slice(0, 3)
+      : ['AI 평가'];
+    const predictedReach: 'low' | 'medium' | 'high' =
+      parsed.predictedReach === 'low' || parsed.predictedReach === 'high' || parsed.predictedReach === 'medium'
+        ? parsed.predictedReach
+        : (score < 40 ? 'low' : score > 70 ? 'high' : 'medium');
+    return { score, reasons, predictedReach };
+  } catch (err) {
+    console.warn('[virality] AI 실패 → heuristic fallback:', err instanceof Error ? err.message : err);
+    const score = Math.max(0, Math.min(100, baseScore));
+    return {
+      score,
+      reasons: ['AI 평가 실패 - 휴리스틱 추정.'],
+      predictedReach: score < 40 ? 'low' : score > 70 ? 'high' : 'medium',
+    };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 — 강조 단어 자동 highlight + emoji 자동
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Claude 응답에서 첫 JSON 배열을 안전하게 추출 */
+function extractJsonArray(text: string): unknown[] | null {
+  const m = text.match(/\[[\s\S]*\]/);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[0]);
+  } catch {
+    return null;
+  }
+}
+
+/** 너무 긴 transcript에 대비해 segment를 chunk(80개씩)로 잘라 Claude에 전달. */
+const PHASE2_CHUNK_SIZE = 80;
+function chunkSegments<T>(segs: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < segs.length; i += PHASE2_CHUNK_SIZE) {
+    out.push(segs.slice(i, i + PHASE2_CHUNK_SIZE));
+  }
+  return out;
+}
+
+/**
+ * 자막의 핵심 강조 단어를 Claude로 추출 — Submagic 스타일.
+ * 응답 형식: [{ segmentId, keywords: [...] }]
+ * 환각 방지: 결과는 실제 segment.text 안에 등장하는 단어만 남김.
+ */
+export async function detectEmphasisKeywords(
+  transcript: Transcript,
+  anthropicApiKey: string,
+): Promise<Array<{ segmentId: number; keywords: string[] }>> {
+  if (!anthropicApiKey || !anthropicApiKey.trim()) {
+    throw new Error('Anthropic API 키가 설정되지 않았습니다.');
+  }
+  const client = new Anthropic({ apiKey: anthropicApiKey.trim(), maxRetries: 3, timeout: 180_000 });
+  const system = `당신은 한국 유튜브 쇼츠 자막 디자이너입니다.
+각 자막 segment에서 시청자의 시선을 끌어야 할 핵심 단어 1~3개를 골라 강조 후보로 표시합니다 (Submagic 스타일).
+
+## 강조 기준 (우선순위 순)
+1) **숫자/통계** — "100만", "3가지", "30초"
+2) **충격/감정 형용사** — "최악", "역대급", "충격", "절대"
+3) **고유명사/브랜드** — "유튜브", "삼성", "GPT"
+4) **핵심 명사** — 문장의 주제어 (제일 의미가 큰 단어)
+5) 조사/접속사/대명사는 **절대 강조 금지** (은/는/이/가/그래서/근데 등)
+
+## 출력 규칙 (절대 위반 금지)
+- keywords의 단어는 반드시 해당 segment.text에 **공백 포함 그대로** 등장해야 함
+- 조사 붙은 형태("100만이") 그대로 OK — 하지만 단어 경계는 자연스럽게
+- segment당 최대 3개. 의미 강조가 어색하면 빈 배열 [] 반환
+- 짧은 segment(5자 이하)는 keyword 없이 빈 배열
+- JSON 배열만 출력. 형식: [{ "segmentId": 0, "keywords": ["100만", "조회수"] }, ...]`;
+
+  const results: Array<{ segmentId: number; keywords: string[] }> = [];
+  const segChunks = chunkSegments(transcript.segments.map((s, i) => ({ id: i, text: s.text })));
+  for (const chunk of segChunks) {
+    const userPrompt = `다음 자막 segment들에서 강조할 핵심 단어를 골라주세요.
+
+${chunk.map((s) => `[${s.id}] ${s.text}`).join('\n')}
+
+⚠️ keywords는 반드시 segment.text 안에 그대로 등장하는 단어만. JSON 배열만 출력.`;
+    let response;
+    try {
+      response = await createWithFallback(client, {
+        max_tokens: 4096,
+        temperature: 0.3,
+        system,
+        messages: [{ role: 'user', content: userPrompt }],
+      });
+    } catch (err) {
+      const e = err as { status?: number; message?: string };
+      console.error('[emphasis] Anthropic API error:', e.status, e.message);
+      if (e.status === 401) throw new Error('Anthropic API 키가 잘못되었습니다.');
+      continue;
+    }
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const parsed = extractJsonArray(text);
+    if (!parsed) continue;
+    for (const raw of parsed) {
+      const item = raw as { segmentId?: number; keywords?: string[] };
+      if (typeof item.segmentId !== 'number') continue;
+      if (!Array.isArray(item.keywords)) continue;
+      const segText = transcript.segments[item.segmentId]?.text ?? '';
+      const valid = item.keywords
+        .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
+        .map((k) => k.trim())
+        .filter((k) => segText.includes(k))
+        .slice(0, 3);
+      results.push({ segmentId: item.segmentId, keywords: valid });
+    }
+  }
+  return results;
+}
+
+/** 각 segment에 어울리는 emoji 1개를 Claude로 추천. 어색하면 segmentId 제외. */
+export async function suggestEmojis(
+  segments: TranscriptSegment[],
+  anthropicApiKey: string,
+): Promise<Array<{ segmentId: number; emoji: string }>> {
+  if (!anthropicApiKey || !anthropicApiKey.trim()) {
+    throw new Error('Anthropic API 키가 설정되지 않았습니다.');
+  }
+  const client = new Anthropic({ apiKey: anthropicApiKey.trim(), maxRetries: 3, timeout: 180_000 });
+  const system = `당신은 한국 유튜브 쇼츠 자막 디자이너입니다.
+각 자막 segment의 감정/주제에 맞는 emoji를 정확히 1개 골라줍니다.
+
+## 규칙
+- 감정이 명확하지 않거나 어색하면 **그 segment는 결과에서 제외** (강제 매칭 금지)
+- emoji는 1개만. 여러 개 조합 금지
+- 추상 개념엔 무리하게 매칭하지 말 것 — 자연스러움 우선
+- 좋은 예시:
+  * "진짜 충격이었어요" → 😱
+  * "100만원 벌었습니다" → 💰
+  * "사랑합니다" → ❤️
+  * "비밀입니다" → 🤫
+  * "운동해야 합니다" → 💪
+  * "맛있어요" → 😋
+- 출력: JSON 배열만. 형식: [{ "segmentId": 0, "emoji": "😱" }, ...]`;
+
+  const results: Array<{ segmentId: number; emoji: string }> = [];
+  const segChunks = chunkSegments(segments.map((s, i) => ({ id: i, text: s.text })));
+  for (const chunk of segChunks) {
+    const userPrompt = `다음 자막 segment 각각에 어울리는 emoji를 골라주세요 (어색하면 생략).
+
+${chunk.map((s) => `[${s.id}] ${s.text}`).join('\n')}
+
+⚠️ 자연스러운 것만. 어색하면 그 segmentId는 빼고 결과 출력. JSON 배열만.`;
+    let response;
+    try {
+      response = await createWithFallback(client, {
+        max_tokens: 2048,
+        temperature: 0.5,
+        system,
+        messages: [{ role: 'user', content: userPrompt }],
+      });
+    } catch (err) {
+      const e = err as { status?: number; message?: string };
+      console.error('[emoji] Anthropic API error:', e.status, e.message);
+      if (e.status === 401) throw new Error('Anthropic API 키가 잘못되었습니다.');
+      continue;
+    }
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const parsed = extractJsonArray(text);
+    if (!parsed) continue;
+    for (const raw of parsed) {
+      const item = raw as { segmentId?: number; emoji?: string };
+      if (typeof item.segmentId !== 'number') continue;
+      if (typeof item.emoji !== 'string') continue;
+      const e = item.emoji.trim();
+      if (!e) continue;
+      // 보수적 검증: emoji는 보통 2~4 UTF-16 code units
+      if (e.length > 4) continue;
+      results.push({ segmentId: item.segmentId, emoji: e });
+    }
+  }
+  return results;
 }

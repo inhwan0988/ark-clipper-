@@ -17,6 +17,10 @@ interface HookPreviewCardProps {
   onSelect: () => void;
   onFocus: () => void;
   onToggle: () => void;
+  // [Phase 3 / Task 1] Virality
+  viralityScore?: number;
+  predictedReach?: 'low' | 'medium' | 'high';
+  viralityReasons?: string[];
 }
 
 const OUTPUT_W = 1080;
@@ -57,6 +61,7 @@ export function HookPreviewCard({
   videoSrc, startTime, endTime, title, customization,
   selected, focused, confidence, index,
   onFocus, onToggle,
+  viralityScore, predictedReach, viralityReasons,
 }: HookPreviewCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -324,7 +329,47 @@ export function HookPreviewCard({
         <p className="text-gray-500 text-[10px] mt-0.5 font-mono">
           {formatTime(startTime)} – {formatTime(endTime)}
         </p>
+        {/* [Phase 3 / Task 1] Virality 별점 + reach 배지 */}
+        {typeof viralityScore === 'number' && (
+          <div
+            className="mt-1 flex items-center gap-1.5"
+            title={viralityReasons && viralityReasons.length > 0
+              ? `Virality ${viralityScore}/100\n${viralityReasons.join('\n')}`
+              : `Virality ${viralityScore}/100`}
+          >
+            <ViralityStars score={viralityScore} />
+            {predictedReach && (
+              <span
+                className={`text-[9px] font-bold px-1 py-0.5 rounded ${
+                  predictedReach === 'high'
+                    ? 'bg-emerald-500/30 text-emerald-300'
+                    : predictedReach === 'medium'
+                      ? 'bg-amber-500/30 text-amber-300'
+                      : 'bg-zinc-500/30 text-zinc-300'
+                }`}
+              >
+                {predictedReach === 'high' ? 'HIGH' : predictedReach === 'medium' ? 'MED' : 'LOW'}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+/** Virality 점수(0-100) → 별 5개 + 숫자 표시. 0.5 단위. */
+function ViralityStars({ score }: { score: number }) {
+  const starsFloat = Math.max(0, Math.min(5, score / 20));
+  const fullStars = Math.floor(starsFloat);
+  const hasHalf = starsFloat - fullStars >= 0.5;
+  const emptyStars = 5 - fullStars - (hasHalf ? 1 : 0);
+  return (
+    <span className="text-[10px] leading-none select-none" aria-label={`Virality ${score}/100`}>
+      <span className="text-yellow-400">{'★'.repeat(fullStars)}</span>
+      {hasHalf && <span className="text-yellow-400/60">★</span>}
+      <span className="text-zinc-700">{'★'.repeat(emptyStars)}</span>
+      <span className="ml-1 text-zinc-400 font-mono text-[9px]">{score}</span>
+    </span>
   );
 }

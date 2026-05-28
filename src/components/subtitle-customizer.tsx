@@ -10,6 +10,25 @@ export interface SubtitleStyle {
   primaryColor: string;
   outlineColor: string;
   bold: boolean;
+  // [Phase 3 / Task 4] 자막 애니메이션
+  animation?: 'none' | 'typewriter' | 'bounce' | 'wave';
+  // [Phase 3 / Task 3] BGM
+  bgmEnabled?: boolean;
+  bgmPath?: string;
+  bgmVolume?: number;
+  // [Phase 3 / Task 2] B-roll (Pexels)
+  brollEnabled?: boolean;
+  brollApiKey?: string;
+  // Phase 2 — 강조 단어 highlight
+  /** 강조 단어 색 (6자리 hex, # 없이). default 'FFE600' */
+  emphasisColor?: string;
+  /** 강조 단어 크기 배율 % (default 130) */
+  emphasisScale?: number;
+  // Phase 2 — emoji 자동
+  /** emoji 자동 삽입 on/off (default true) */
+  emojiEnabled?: boolean;
+  /** emoji 위치 (default 'end') */
+  emojiPlacement?: 'inline' | 'end';
 }
 
 interface SubtitleCustomizerProps {
@@ -182,6 +201,161 @@ export function SubtitleCustomizer({ value, onChange }: SubtitleCustomizerProps)
               />
             </div>
           </div>
+
+          {/* [Phase 3] 애니메이션 + BGM + B-roll */}
+          <div className="border-t border-[#1a2d4d] pt-3 space-y-3">
+            <div>
+              <label className="block text-gray-600 text-xs mb-1.5">자막 애니메이션</label>
+              <select
+                value={value.animation || 'none'}
+                onChange={(e) => update({ animation: e.target.value as SubtitleStyle['animation'] })}
+                className="w-full px-3 py-2 bg-[#1a2d4d] border border-[#243a5c] rounded text-white text-sm focus:outline-none focus:border-[#4988C4]"
+              >
+                <option value="none">없음</option>
+                <option value="typewriter">타자기 (글자별)</option>
+                <option value="bounce">바운스 (펄스)</option>
+                <option value="wave">웨이브 (페이드+회전)</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <label className="text-gray-600 text-xs">배경음악 (BGM)</label>
+              <button
+                onClick={() => update({ bgmEnabled: !value.bgmEnabled })}
+                className={`relative w-10 h-6 rounded-full transition-colors ${
+                  value.bgmEnabled ? 'bg-[#4988C4]' : 'bg-[#243a5c]'
+                }`}
+              >
+                <div className={`absolute top-0.5 w-5 h-5 bg-[#0a1428] rounded-full transition-transform ${
+                  value.bgmEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                }`} />
+              </button>
+            </div>
+            {value.bgmEnabled && (
+              <div className="pl-3 border-l-2 border-[#243a5c] space-y-2">
+                <input
+                  type="text"
+                  value={value.bgmPath || ''}
+                  onChange={(e) => update({ bgmPath: e.target.value })}
+                  placeholder="mp3 절대 경로 (비워두면 mood 자동 매칭)"
+                  className="w-full px-2 py-1.5 bg-[#1a2d4d] border border-[#243a5c] rounded text-white text-xs focus:outline-none focus:border-[#4988C4]"
+                />
+                <div>
+                  <label className="flex justify-between text-gray-600 text-xs mb-1">
+                    <span>볼륨</span>
+                    <span className="text-white">{Math.round((value.bgmVolume ?? 0.15) * 100)}%</span>
+                  </label>
+                  <input
+                    type="range"
+                    min={0} max={50} step={1}
+                    value={Math.round((value.bgmVolume ?? 0.15) * 100)}
+                    onChange={(e) => update({ bgmVolume: parseInt(e.target.value) / 100 })}
+                    className="w-full accent-[#4988C4]"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between">
+              <label className="text-gray-600 text-xs">B-roll 자동 삽입 (Pexels)</label>
+              <button
+                onClick={() => update({ brollEnabled: !value.brollEnabled })}
+                className={`relative w-10 h-6 rounded-full transition-colors ${
+                  value.brollEnabled ? 'bg-[#4988C4]' : 'bg-[#243a5c]'
+                }`}
+              >
+                <div className={`absolute top-0.5 w-5 h-5 bg-[#0a1428] rounded-full transition-transform ${
+                  value.brollEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                }`} />
+              </button>
+            </div>
+            {value.brollEnabled && (
+              <input
+                type="password"
+                value={value.brollApiKey || ''}
+                onChange={(e) => update({ brollApiKey: e.target.value })}
+                placeholder="Pexels API Key (env: PEXELS_API_KEY)"
+                className="w-full px-2 py-1.5 bg-[#1a2d4d] border border-[#243a5c] rounded text-white text-xs focus:outline-none focus:border-[#4988C4]"
+              />
+            )}
+          </div>
+
+          {/* Phase 2 — 강조 단어 색 */}
+          <div>
+            <label className="block text-gray-600 text-xs mb-1.5">
+              강조 색 <span className="text-gray-500">(키워드 highlight)</span>
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {PRESET_COLORS.map((c) => (
+                <button
+                  key={`emph-${c.hex}`}
+                  onClick={() => update({ emphasisColor: c.hex })}
+                  title={c.name}
+                  className={`w-8 h-8 rounded border-2 transition-all ${
+                    (value.emphasisColor ?? 'FFE600') === c.hex ? 'border-[#4988C4] scale-110' : 'border-zinc-600'
+                  }`}
+                  style={{ backgroundColor: `#${c.hex}` }}
+                />
+              ))}
+              <input
+                type="color"
+                value={`#${value.emphasisColor ?? 'FFE600'}`}
+                onChange={(e) => update({ emphasisColor: e.target.value.replace('#', '').toUpperCase() })}
+                className="w-8 h-8 rounded border-2 border-zinc-600 bg-transparent cursor-pointer"
+                title="직접 선택"
+              />
+            </div>
+          </div>
+
+          {/* Phase 2 — 강조 크기 배율 */}
+          <div>
+            <label className="flex justify-between items-center text-gray-600 text-xs mb-1.5">
+              <span>강조 크기 배율</span>
+              <span className="text-white">{value.emphasisScale ?? 130}%</span>
+            </label>
+            <input
+              type="range"
+              min={100} max={180} step={5}
+              value={value.emphasisScale ?? 130}
+              onChange={(e) => update({ emphasisScale: parseInt(e.target.value) })}
+              className="w-full accent-[#4988C4]"
+            />
+          </div>
+
+          {/* Phase 2 — emoji 자동 toggle + 위치 */}
+          <div className="flex items-center justify-between">
+            <label className="text-gray-600 text-xs">emoji 자동 추가</label>
+            <button
+              onClick={() => update({ emojiEnabled: !(value.emojiEnabled ?? true) })}
+              className={`relative w-10 h-6 rounded-full transition-colors ${
+                (value.emojiEnabled ?? true) ? 'bg-[#4988C4]' : 'bg-[#243a5c]'
+              }`}
+            >
+              <div className={`absolute top-0.5 w-5 h-5 bg-[#0a1428] rounded-full transition-transform ${
+                (value.emojiEnabled ?? true) ? 'translate-x-4' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </div>
+          {(value.emojiEnabled ?? true) && (
+            <div>
+              <label className="block text-gray-600 text-xs mb-1.5">emoji 위치</label>
+              <div className="flex gap-2">
+                {(['end', 'inline'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => update({ emojiPlacement: p })}
+                    className={`flex-1 px-3 py-1.5 rounded text-xs transition-colors ${
+                      (value.emojiPlacement ?? 'end') === p
+                        ? 'bg-[#4988C4] text-white'
+                        : 'bg-[#1a2d4d] text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {p === 'end' ? '문장 끝' : '인라인'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Preview */}
           <div>

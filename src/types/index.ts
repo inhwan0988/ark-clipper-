@@ -44,6 +44,10 @@ export interface TranscriptSegment {
   words: TranscriptWord[];
   /** Phase 4 — diarization 결과 화자 라벨 (예: "A", "B"). AssemblyAI 사용 시에만 채워짐. */
   speaker?: string;
+  /** Phase 2 — Claude가 추출한 강조 단어 (자막에서 색/크기로 강조 렌더링) */
+  keywords?: string[];
+  /** Phase 2 — Claude가 매칭한 emoji 1개 (감정/주제 일치 시) */
+  emoji?: string;
 }
 
 export interface TranscriptWord {
@@ -76,7 +80,34 @@ export interface HookSuggestion {
   // 해당 시간 구간의 핵심 대사 인용 (시간-제목 매칭 검증용)
   quote?: string;
   // per-clip 레이아웃 오버라이드 (없으면 전역 customization.layout 사용)
-  layout?: 'letterbox' | 'crop_vertical';
+  layout?: 'letterbox' | 'crop_vertical' | 'custom_background';
+
+  // [Phase 3 / Task 1] Virality Score — Claude 예상 도달 점수
+  /** 0-100. 높을수록 viral 가능성 큼. */
+  virality_score?: number;
+  /** 점수 산정 근거(짧은 한국어 문장 1~3개) */
+  virality_reasons?: string[];
+  /** 예상 도달 — low(<40) / medium(40-70) / high(>70) */
+  predicted_reach?: 'low' | 'medium' | 'high';
+}
+
+/**
+ * 자막+타이틀+채널+layout 설정 묶음. UI 전체 ClipCustomization JSON snapshot 저장용.
+ * customization을 unknown으로 유지 — 순환 import 방지 (Template DB 코드는 lib에 있음).
+ */
+export interface TemplateSettings {
+  customization: unknown;
+  /** 호환성을 위한 버전 (향후 마이그레이션 대비) */
+  version?: number;
+}
+
+export interface Template {
+  id: string;
+  name: string;
+  /** JSON-stringified TemplateSettings */
+  settings: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ProgressEvent {

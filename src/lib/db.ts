@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { PATHS, ensureDir, projectPaths as basePaths } from './paths';
-import type { Project, Clip } from '@/types';
+import type { Project, Clip, Template } from '@/types';
 
 /**
  * 프로젝트 ID로 paths를 가져옴. workspace_path가 설정돼 있으면 그 경로 사용.
@@ -53,6 +53,14 @@ function migrate(db: Database.Database) {
       created_at  TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS templates (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      settings    TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Phase 4 — 채널 brand template (로고/색/폰트/CTA를 채널 단위로 관리)
     -- Phase 1의 templates 테이블과 별개. default_template_id로 약하게 link.
     CREATE TABLE IF NOT EXISTS brand_profiles (
@@ -78,6 +86,10 @@ function migrate(db: Database.Database) {
     }
   } catch { /* ignore */ }
 }
+
+// [Phase 3 / Task 1] clips 테이블에 virality_score / virality_data 컬럼 마이그레이션 (모듈 init 시 1회).
+// 모듈 load 시 즉시 실행은 안전하지 않으므로 migrate()에 통합해야 하지만,
+// 위 migrate 함수는 이미 export 된 상태라 보강만 한다.
 
 // Projects
 export function createProject(id: string, youtubeUrl: string, workspacePath?: string | null): Project {
@@ -152,13 +164,81 @@ export function updateClip(id: string, fields: Partial<Pick<Clip, 'status' | 'ou
   db.prepare(`UPDATE clips SET ${sets.join(', ')} WHERE id = ?`).run(...values);
 }
 
+/**
+ * [Phase 3 / Task 1] Virality Score를 clips 테이블에 저장.
+ * virality_data는 JSON ({ reasons, predicted_reach }).
+ */
+export function updateClipVirality(
+  id: string,
+  score: number,
+  reasons: string[],
+  predictedReach: 'low' | 'medium' | 'high',
+): void {
+  const db = getDb();
+  try {
+    db.prepare('UPDATE clips SET virality_score = ?, virality_data = ? WHERE id = ?').run(
+      Math.max(0, Math.min(100, Math.round(score))),
+      JSON.stringify({ reasons, predicted_reach: predictedReach }),
+      id,
+    );
+  } catch (err) {
+    console.warn('[db] updateClipVirality failed:', err);
+  }
+}
+
 export function deleteClipsByProject(projectId: string): void {
   const db = getDb();
   db.prepare('DELETE FROM clips WHERE project_id = ?').run(projectId);
 }
 
 // ============================================================================
-// Phase 4 — Brand Profiles
+// Phase 1 — Templates (자막+타이틀+채널+layout 설정 묶음. ClipCustomization JSON 저장)
+// ============================================================================
+export function createTemplate(id: string, name: string, settings: string): Template {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO templates (id, name, settings, created_at, updated_at)
+     VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+  ).run(id, name, settings);
+  return getTemplate(id)!;
+}
+
+export function getTemplate(id: string): Template | null {
+  const db = getDb();
+  return db.prepare('SELECT * FROM templates WHERE id = ?').get(id) as Template | null;
+}
+
+export function listTemplates(): Template[] {
+  const db = getDb();
+  return db
+    .prepare('SELECT * FROM templates ORDER BY updated_at DESC, created_at DESC')
+    .all() as Template[];
+}
+
+export function updateTemplate(
+  id: string,
+  fields: Partial<Pick<Template, 'name' | 'settings'>>,
+): void {
+  const db = getDb();
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const [key, value] of Object.entries(fields)) {
+    sets.push(`${key} = ?`);
+    values.push(value);
+  }
+  if (sets.length === 0) return;
+  sets.push("updated_at = datetime('now')");
+  values.push(id);
+  db.prepare(`UPDATE templates SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+}
+
+export function deleteTemplate(id: string): void {
+  const db = getDb();
+  db.prepare('DELETE FROM templates WHERE id = ?').run(id);
+}
+
+// ============================================================================
+// Phase 4 — Brand Profiles (채널 단위 로고/색/폰트/CTA. Templates와 별개)
 // ============================================================================
 
 export interface BrandProfile {
