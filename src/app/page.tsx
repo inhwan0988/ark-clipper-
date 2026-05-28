@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { UrlInput } from '@/components/url-input';
 import { VideoPreview } from '@/components/video-preview';
-import { ApiKeySettings, OpenAiKeySettings } from '@/components/api-key-settings';
+import { ApiKeySettings, OpenAiKeySettings, AssemblyAiKeySettings } from '@/components/api-key-settings';
+import { BrandProfileManager } from '@/components/brand-profile-manager';
 import { ApiStoragePathSettings, getStoredStoragePath } from '@/components/storage-path-settings';
 import { ErrorReportingSettings } from '@/components/error-reporting-settings';
 import type { Project } from '@/types';
@@ -92,6 +93,8 @@ export default function HomePage() {
           <div className="flex flex-col items-center gap-3">
             <ApiKeySettings />
             <OpenAiKeySettings />
+            <AssemblyAiKeySettings />
+            <BrandProfileManager />
             <ApiStoragePathSettings />
             <ErrorReportingSettings />
           </div>

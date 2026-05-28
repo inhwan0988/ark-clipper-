@@ -42,6 +42,8 @@ export interface TranscriptSegment {
   end: number;
   text: string;
   words: TranscriptWord[];
+  /** Phase 4 — diarization 결과 화자 라벨 (예: "A", "B"). AssemblyAI 사용 시에만 채워짐. */
+  speaker?: string;
 }
 
 export interface TranscriptWord {
