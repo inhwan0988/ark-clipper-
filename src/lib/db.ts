@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { PATHS, ensureDir, projectPaths as basePaths } from './paths';
-import type { Project, Clip } from '@/types';
+import type { Project, Clip, Template } from '@/types';
 
 /**
  * 프로젝트 ID로 paths를 가져옴. workspace_path가 설정돼 있으면 그 경로 사용.
@@ -51,6 +51,14 @@ function migrate(db: Database.Database) {
       output_path TEXT,
       is_manual   INTEGER DEFAULT 0,
       created_at  TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS templates (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      settings    TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
 
@@ -139,4 +147,48 @@ export function updateClip(id: string, fields: Partial<Pick<Clip, 'status' | 'ou
 export function deleteClipsByProject(projectId: string): void {
   const db = getDb();
   db.prepare('DELETE FROM clips WHERE project_id = ?').run(projectId);
+}
+
+// Templates — 자막+타이틀+채널+layout 설정 묶음. ClipCustomization JSON 그대로 저장.
+export function createTemplate(id: string, name: string, settings: string): Template {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO templates (id, name, settings, created_at, updated_at)
+     VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+  ).run(id, name, settings);
+  return getTemplate(id)!;
+}
+
+export function getTemplate(id: string): Template | null {
+  const db = getDb();
+  return db.prepare('SELECT * FROM templates WHERE id = ?').get(id) as Template | null;
+}
+
+export function listTemplates(): Template[] {
+  const db = getDb();
+  return db
+    .prepare('SELECT * FROM templates ORDER BY updated_at DESC, created_at DESC')
+    .all() as Template[];
+}
+
+export function updateTemplate(
+  id: string,
+  fields: Partial<Pick<Template, 'name' | 'settings'>>,
+): void {
+  const db = getDb();
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const [key, value] of Object.entries(fields)) {
+    sets.push(`${key} = ?`);
+    values.push(value);
+  }
+  if (sets.length === 0) return;
+  sets.push("updated_at = datetime('now')");
+  values.push(id);
+  db.prepare(`UPDATE templates SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+}
+
+export function deleteTemplate(id: string): void {
+  const db = getDb();
+  db.prepare('DELETE FROM templates WHERE id = ?').run(id);
 }
