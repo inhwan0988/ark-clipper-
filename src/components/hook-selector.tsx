@@ -255,6 +255,9 @@ export function HookSelector({
                 onSelect={() => toggle(i)}
                 onFocus={() => setFocusedIdx(i)}
                 onToggle={() => toggle(i)}
+                viralityScore={hook.virality_score}
+                predictedReach={hook.predicted_reach}
+                viralityReasons={hook.virality_reasons}
               />
             </div>
           ))}

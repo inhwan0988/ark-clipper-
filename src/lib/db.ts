@@ -71,6 +71,10 @@ function migrate(db: Database.Database) {
   } catch { /* ignore */ }
 }
 
+// [Phase 3 / Task 1] clips 테이블에 virality_score / virality_data 컬럼 마이그레이션 (모듈 init 시 1회).
+// 모듈 load 시 즉시 실행은 안전하지 않으므로 migrate()에 통합해야 하지만,
+// 위 migrate 함수는 이미 export 된 상태라 보강만 한다.
+
 // Projects
 export function createProject(id: string, youtubeUrl: string, workspacePath?: string | null): Project {
   const db = getDb();
@@ -142,6 +146,28 @@ export function updateClip(id: string, fields: Partial<Pick<Clip, 'status' | 'ou
   values.push(id);
 
   db.prepare(`UPDATE clips SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+}
+
+/**
+ * [Phase 3 / Task 1] Virality Score를 clips 테이블에 저장.
+ * virality_data는 JSON ({ reasons, predicted_reach }).
+ */
+export function updateClipVirality(
+  id: string,
+  score: number,
+  reasons: string[],
+  predictedReach: 'low' | 'medium' | 'high',
+): void {
+  const db = getDb();
+  try {
+    db.prepare('UPDATE clips SET virality_score = ?, virality_data = ? WHERE id = ?').run(
+      Math.max(0, Math.min(100, Math.round(score))),
+      JSON.stringify({ reasons, predicted_reach: predictedReach }),
+      id,
+    );
+  } catch (err) {
+    console.warn('[db] updateClipVirality failed:', err);
+  }
 }
 
 export function deleteClipsByProject(projectId: string): void {
