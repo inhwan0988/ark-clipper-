@@ -95,10 +95,59 @@ function getRandomPort() {
   });
 }
 
+// WHY: 렌더러는 http://localhost:PORT 로 로드되고 API 키는 localStorage에 저장됨.
+// localStorage는 origin(포트 포함)별로 격리되므로, 매 실행 랜덤 포트면 origin이 바뀌어
+// 이전에 저장한 키가 사라진 것처럼 보임. → 포트를 저장해 재사용하면 origin이 고정돼 키가 유지됨.
+function getPortFilePath() {
+  return path.join(app.getPath('userData'), 'arc-port.json');
+}
+
+function readSavedPort() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(getPortFilePath(), 'utf-8'));
+    if (typeof saved.port === 'number' && saved.port > 0 && saved.port < 65536) {
+      return saved.port;
+    }
+  } catch {
+    /* 파일 없음/손상 — 무시 */
+  }
+  return null;
+}
+
+function savePort(port) {
+  try {
+    fs.writeFileSync(getPortFilePath(), JSON.stringify({ port }), 'utf-8');
+  } catch (e) {
+    logLine(`[port] save failed: ${e}`);
+  }
+}
+
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const tester = net.createServer();
+    tester.once('error', () => resolve(false));
+    tester.once('listening', () => tester.close(() => resolve(true)));
+    tester.listen(port, '127.0.0.1');
+  });
+}
+
+// 저장된 포트가 비어 있으면 재사용, 아니면 새로 잡고 저장.
+async function getStablePort() {
+  const saved = readSavedPort();
+  if (saved && (await isPortFree(saved))) {
+    logLine(`[port] reusing saved port ${saved}`);
+    return saved;
+  }
+  const fresh = await getRandomPort();
+  savePort(fresh);
+  logLine(`[port] new port ${fresh} (saved=${saved ?? 'none'})`);
+  return fresh;
+}
+
 async function startNextServer() {
   if (isDev) return 'http://localhost:3000';
 
-  const port = await getRandomPort();
+  const port = await getStablePort();
   const appRoot = path.join(process.resourcesPath, 'app.asar.unpacked');
   const nextBin = path.join(appRoot, 'node_modules', 'next', 'dist', 'bin', 'next');
 
