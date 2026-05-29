@@ -21,30 +21,42 @@ export function visualWidthUnits(s: string): number {
  * 단어/공백 단위로 끊고, 안 되면 글자 단위로 강제 break.
  */
 export function splitTitleLines(text: string, maxUnits: number): string[] {
-  const t = (text ?? '').trim().replace(/\n+/g, ' ').replace(/\s+/g, ' ');
-  if (!t) return [];
-  if (visualWidthUnits(t) <= maxUnits) return [t];
+  const raw = (text ?? '').replace(/\r\n/g, '\n');
+  if (!raw.trim()) return [];
 
-  const lines: string[] = [];
-  let remaining = t;
-  while (visualWidthUnits(remaining) > maxUnits) {
-    let breakPoint = -1;
-    let acc = 0;
-    let lastSpace = -1;
-    for (let i = 0; i < remaining.length; i++) {
-      acc += visualWidthUnits(remaining[i]);
-      if (remaining[i] === ' ') lastSpace = i;
-      if (acc > maxUnits) {
-        breakPoint = lastSpace >= 0 ? lastSpace : i;
-        break;
-      }
+  const out: string[] = [];
+  // 사용자가 입력한 수동 줄바꿈(\n)을 보존하고, 각 줄은 너비를 넘을 때만 자동 줄바꿈.
+  // 띄어쓰기(공백)도 유지 — 가로 공백 연속만 1칸으로 정규화.
+  for (const manual of raw.split('\n')) {
+    const line = manual.replace(/[ \t]+/g, ' ').trim();
+    if (!line) {
+      out.push(''); // 빈 줄(연속 줄바꿈)도 그대로 유지
+      continue;
     }
-    if (breakPoint < 0) break;
-    lines.push(remaining.slice(0, breakPoint).trim());
-    remaining = remaining.slice(breakPoint).trim();
+    if (visualWidthUnits(line) <= maxUnits) {
+      out.push(line);
+      continue;
+    }
+    let remaining = line;
+    while (visualWidthUnits(remaining) > maxUnits) {
+      let breakPoint = -1;
+      let acc = 0;
+      let lastSpace = -1;
+      for (let i = 0; i < remaining.length; i++) {
+        acc += visualWidthUnits(remaining[i]);
+        if (remaining[i] === ' ') lastSpace = i;
+        if (acc > maxUnits) {
+          breakPoint = lastSpace >= 0 ? lastSpace : i;
+          break;
+        }
+      }
+      if (breakPoint < 0) break;
+      out.push(remaining.slice(0, breakPoint).trim());
+      remaining = remaining.slice(breakPoint).trim();
+    }
+    if (remaining) out.push(remaining);
   }
-  if (remaining) lines.push(remaining);
-  return lines;
+  return out;
 }
 
 /** boxWidth(1080 기준) + fontSize에서 한 줄 maxUnits 계산 */

@@ -4,6 +4,9 @@ export interface ClipCustomization {
   // 레이아웃
   layout: 'letterbox' | 'crop_vertical' | 'custom_background';
 
+  /** 레터박스 여백 배경색 (16진수 RRGGBB, 기본 '000000' = 검정). */
+  backgroundColor?: string;
+
   /**
    * custom_background 모드에서 사용자가 업로드한 배경 이미지/영상 절대경로.
    * 이미지: jpg/jpeg/png/webp. 영상: mp4/mov/webm/mkv.

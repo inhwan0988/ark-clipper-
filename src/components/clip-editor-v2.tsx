@@ -804,8 +804,14 @@ export function ClipEditorV2({
               ref={videoRef}
               src={videoSrc}
               preload="metadata"
-              className={`absolute inset-0 w-full h-full ${draftLayout === 'custom_background' ? '' : 'bg-black'}`}
+              className="absolute inset-0 w-full h-full"
               style={{
+                backgroundColor:
+                  draftLayout === 'custom_background'
+                    ? 'transparent'
+                    : draftLayout === 'crop_vertical'
+                      ? '#000'
+                      : `#${customization.backgroundColor ?? '000000'}`,
                 objectFit: draftLayout === 'crop_vertical' ? 'cover' : 'contain',
                 transform:
                   draftLayout === 'crop_vertical' ||
@@ -1931,6 +1937,32 @@ function LayoutPanel({
           />
         </div>
       </Field>
+
+      {/* 레터박스 배경색 (여백 색 지정) */}
+      {draftLayout === 'letterbox' && (
+        <div className="flex items-center gap-2 pt-2 border-t border-[#243a5c]">
+          <span className="text-[11px] text-gray-400">배경색 (여백)</span>
+          <input
+            type="color"
+            value={`#${customization.backgroundColor ?? '000000'}`}
+            onChange={(e) =>
+              updateCust({ backgroundColor: e.target.value.replace(/^#/, '') })
+            }
+            className="w-8 h-7 rounded cursor-pointer bg-transparent border border-[#243a5c]"
+          />
+          <span className="text-[10px] text-gray-500 font-mono">
+            #{customization.backgroundColor ?? '000000'}
+          </span>
+          {(customization.backgroundColor ?? '000000') !== '000000' && (
+            <button
+              onClick={() => updateCust({ backgroundColor: '000000' })}
+              className="text-[10px] text-gray-500 hover:text-gray-300 underline"
+            >
+              검정으로
+            </button>
+          )}
+        </div>
+      )}
 
       {/* custom_background 모드에서만 — 배경 파일 picker */}
       {draftLayout === 'custom_background' && (

@@ -124,6 +124,8 @@ export interface ClipOptions {
   bgOffsetX?: number;
   /** 배경 세로 오프셋 (1920 기준 px, ±960 범위) — crop_vertical 모드에서만 적용 */
   bgOffsetY?: number;
+  /** 레터박스 배경(여백) 색. 16진수 RRGGBB (예: '000000'). 미설정 시 검정. */
+  backgroundColor?: string;
   /**
    * custom_background 모드에서 사용할 배경 파일 (이미지/영상) 절대경로.
    * 확장자로 자동 감지 (jpg/png/webp = image, mp4/mov/webm/mkv = video).
@@ -226,8 +228,11 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
       const z = Math.max(1, opts.bgZoom ?? 1);
       sourceVf = `scale=${Math.round(OUTPUT_W * z)}:-2:force_original_aspect_ratio=decrease`;
     } else {
-      // letterbox: 1080 너비로 스케일 + 1080x1920 캔버스 패딩 (검정 배경)
-      sourceVf = `scale=${OUTPUT_W}:-2:force_original_aspect_ratio=decrease,pad=${OUTPUT_W}:${OUTPUT_H}:0:${VIDEO_Y}:black`;
+      // letterbox: 1080 너비로 스케일 + 1080x1920 캔버스 패딩 (배경색 지정 가능, 기본 검정)
+      const padColor = opts.backgroundColor
+        ? `0x${opts.backgroundColor.replace(/^#/, '')}`
+        : 'black';
+      sourceVf = `scale=${OUTPUT_W}:-2:force_original_aspect_ratio=decrease,pad=${OUTPUT_W}:${OUTPUT_H}:0:${VIDEO_Y}:${padColor}`;
     }
 
     // canvasVf: 캔버스(1080x1920) 위에 자막/제목/배속 등 공통 effects.

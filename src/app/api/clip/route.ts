@@ -12,6 +12,7 @@ import type { HookSuggestion, Transcript } from '@/types';
 /** 클립 전용 customization (hook에 첨가되어 전달). 미설정 시 payload-level default 사용. */
 interface HookCustomization {
   layout?: LayoutStyle;
+  backgroundColor?: string;
   titleFontName?: string;
   titleFontSize?: number;
   titleColor?: string;
@@ -270,6 +271,7 @@ export async function POST(req: Request) {
         // 실제 사용은 ffmpeg-ops.ts에서 layout === 'custom_background'일 때만.
         customBackgroundPath:
           cust?.customBackgroundPath ?? customBackgroundPath,
+        backgroundColor: cust?.backgroundColor,
         titleDrawtext,
       });
 
