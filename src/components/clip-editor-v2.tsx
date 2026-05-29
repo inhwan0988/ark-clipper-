@@ -167,6 +167,8 @@ export function ClipEditorV2({
   const setPlaybackSpeed = (v: number) =>
     onCustomizationChange({ ...customization, playbackSpeed: v });
   const [muted, setMuted] = useState(false);
+  // YouTube 쇼츠 안전영역 가이드 표시 토글 (글씨가 UI에 안 가리는 영역 안내)
+  const [showSafeZone, setShowSafeZone] = useState(false);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -809,6 +811,43 @@ export function ClipEditorV2({
                 onCustomizationChange({ ...customization, bgZoom: newZoom });
               }}
             />
+            {/* YouTube 쇼츠 안전영역 가이드 — 글씨가 쇼츠 UI에 안 가리는 영역 안내 */}
+            {showSafeZone && (
+              <div className="pointer-events-none absolute inset-0 z-30">
+                {/* 하단 UI — 제목·채널·자막·음악 영역 (글씨 피하기) */}
+                <div
+                  className="absolute inset-x-0 bottom-0 bg-red-500/15 border-t-2 border-dashed border-red-400/70"
+                  style={{ height: '24%' }}
+                >
+                  <span className="absolute top-1 left-1 text-[9px] font-bold text-red-100 bg-black/70 px-1 py-0.5 rounded">
+                    하단 UI · 제목/채널/자막
+                  </span>
+                </div>
+                {/* 우측 버튼 — 좋아요·댓글·공유 (글씨 피하기) */}
+                <div
+                  className="absolute top-0 bottom-0 right-0 bg-red-500/15 border-l-2 border-dashed border-red-400/70"
+                  style={{ width: '14%' }}
+                >
+                  <span className="absolute top-2 right-1 text-[9px] font-bold text-red-100 bg-black/70 px-1 py-0.5 rounded [writing-mode:vertical-rl]">
+                    버튼 UI
+                  </span>
+                </div>
+                {/* 상단 여백 */}
+                <div
+                  className="absolute inset-x-0 top-0 bg-red-500/10 border-b border-dashed border-red-400/40"
+                  style={{ height: '6%' }}
+                />
+                {/* 안전 영역 (이 안에 글씨를 넣으면 안 잘림) */}
+                <div
+                  className="absolute border-2 border-dashed border-emerald-400/90"
+                  style={{ top: '6%', left: '5%', right: '14%', bottom: '24%' }}
+                >
+                  <span className="absolute top-0.5 left-1 text-[10px] font-bold text-emerald-100 bg-black/70 px-1 py-0.5 rounded">
+                    ✓ 글씨 안전 영역
+                  </span>
+                </div>
+              </div>
+            )}
             {/* 제목 오버레이 — 드래그 이동 / 코너 크기 / 좌우 너비 / 더블클릭 편집 */}
             {(draftTitle || titleEditing) && (() => {
               const titleXVal =
@@ -1195,7 +1234,7 @@ export function ClipEditorV2({
             <select
               value={playbackSpeed}
               onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))}
-              className="bg-transparent text-white text-xs focus:outline-none cursor-pointer"
+              className="bg-[#0a1428] text-white text-xs focus:outline-none cursor-pointer"
             >
               <option value={1.0}>1.0x</option>
               <option value={1.1}>1.1x</option>
@@ -1210,6 +1249,17 @@ export function ClipEditorV2({
               <option value={2.0}>2.0x</option>
             </select>
           </div>
+          <button
+            onClick={() => setShowSafeZone((s) => !s)}
+            title="YouTube 쇼츠 안전영역 가이드 켜기/끄기 — 글씨가 UI에 안 가리는 영역 표시"
+            className={`px-2 h-8 rounded text-[11px] font-bold border whitespace-nowrap ${
+              showSafeZone
+                ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-300'
+                : 'bg-[#11203d] border-[#243a5c] text-gray-400 hover:bg-[#1a2d4d]'
+            }`}
+          >
+            📐 안전영역
+          </button>
           <Sep />
           <ActionBtn onClick={undo} disabled={history.length === 0} title="실행 취소 (Cmd/Ctrl+Z)">↶</ActionBtn>
           <ActionBtn onClick={redo} disabled={future.length === 0} title="다시 실행 (Cmd/Ctrl+Shift+Z)">↷</ActionBtn>
