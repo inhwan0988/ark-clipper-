@@ -740,9 +740,10 @@ export function ClipEditorV2({
             </button>
           )}
           <button
-            onClick={handleResetDraft}
-            disabled={!isDirty}
+            onClick={undo}
+            disabled={history.length === 0}
             className="px-3 py-1.5 bg-[#1a2d4d] border border-[#243a5c] text-gray-400 rounded text-xs hover:bg-[#243a5c] disabled:opacity-40 disabled:cursor-not-allowed transition"
+            title="바로 직전 단계로 되돌리기 (한 단계씩 취소, Cmd/Ctrl+Z)"
           >
             ↩️ 취소
           </button>
@@ -766,11 +767,35 @@ export function ClipEditorV2({
             style={{ containerType: 'size' } as React.CSSProperties}
             title="실제 출력되는 9:16 쇼츠 영역"
           >
+            {/* custom_background 미리보기 — 업로드한 배경을 영상 뒤에 표시 (출력과 동일) */}
+            {draftLayout === 'custom_background' &&
+              customization.customBackgroundPath &&
+              projectId &&
+              (/(\.mp4|\.mov|\.webm|\.mkv)$/i.test(
+                customization.customBackgroundPath,
+              ) ? (
+                <video
+                  key={customization.customBackgroundPath}
+                  src={`/api/projects/background?projectId=${projectId}`}
+                  className="absolute inset-0 w-full h-full object-cover"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                />
+              ) : (
+                <img
+                  key={customization.customBackgroundPath}
+                  src={`/api/projects/background?projectId=${projectId}`}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              ))}
             <video
               ref={videoRef}
               src={videoSrc}
               preload="metadata"
-              className="absolute inset-0 w-full h-full bg-black"
+              className={`absolute inset-0 w-full h-full ${draftLayout === 'custom_background' ? '' : 'bg-black'}`}
               style={{
                 objectFit: draftLayout === 'crop_vertical' ? 'cover' : 'contain',
                 transform:
