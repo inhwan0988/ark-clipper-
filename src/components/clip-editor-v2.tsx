@@ -5,7 +5,6 @@ import type { ClipCustomization } from './clip-customizer';
 import type { Transcript } from '@/types';
 import { getStoredApiKey } from './api-key-settings';
 import { splitTitleLines, maxUnitsForBox, osAwareCssFontFamily } from '@/lib/title-wrap';
-import { TimelineEditor } from './timeline-editor';
 
 interface Props {
   videoSrc: string;
@@ -113,8 +112,6 @@ export function ClipEditorV2({
     propLayout || customization.layout,
   );
   const [activeTab, setActiveTab] = useState<TabKey>('title');
-  // Phase 4 — "고급 편집" (in/out 비주얼 타임라인) 토글
-  const [advancedTimelineOpen, setAdvancedTimelineOpen] = useState(false);
 
   useEffect(() => {
     setDraftStartTime(propStartTime);
@@ -756,34 +753,6 @@ export function ClipEditorV2({
         </div>
       </div>
 
-      {/* Phase 4 — 고급 편집 (in/out 비주얼 타임라인) */}
-      <div className="border-b border-[#243a5c] bg-[#0a1428] shrink-0">
-        <button
-          type="button"
-          onClick={() => setAdvancedTimelineOpen((v) => !v)}
-          className="w-full px-4 py-1.5 text-left text-xs text-gray-400 hover:text-white hover:bg-[#11203d] transition flex items-center gap-2"
-          title="시작/끝 핸들을 드래그해 클립 구간을 정밀 조정 ([/]) 키로 1초씩 미세조정"
-        >
-          <span>{advancedTimelineOpen ? '▾' : '▸'}</span>
-          <span className="font-semibold">🎞️ 고급 편집</span>
-          <span className="text-gray-600">— in/out 비주얼 드래그 + 자막 미리보기</span>
-        </button>
-        {advancedTimelineOpen && (
-          <div className="px-4 py-3 border-t border-[#243a5c]">
-            <TimelineEditor
-              duration={duration}
-              startTime={draftStartTime}
-              endTime={draftEndTime}
-              transcript={transcript}
-              onChange={({ startTime, endTime }) => {
-                setDraftStartTime(startTime);
-                setDraftEndTime(endTime);
-              }}
-            />
-          </div>
-        )}
-      </div>
-
       {/* 중앙: 좌(미리보기) + 우(탭) */}
       <div className="flex-1 flex overflow-hidden min-h-0">
         {/* 좌 — 영상 미리보기 (padding 최소화, 9:16 영역을 굵은 선으로 강조) */}
@@ -1004,6 +973,26 @@ export function ClipEditorV2({
               const text =
                 seg?.text || inClipSeg?.text || nearestSeg?.text || '예시 자막';
               if (!text) return null;
+              // 미리보기 줄바꿈 — 사용자가 슬라이더로 정한 maxCharsPerLine을 즉시 반영.
+              // 어절(공백) 우선, 없으면 maxChars에서 강제 절단.
+              const maxLineChars = Math.max(
+                4,
+                customization.subtitleMaxCharsPerLine ?? 13,
+              );
+              const previewLines: string[] = (() => {
+                const t = text.trim().replace(/\s+/g, ' ');
+                if (t.length <= maxLineChars) return [t];
+                const lines: string[] = [];
+                let rem = t;
+                while (rem.length > maxLineChars) {
+                  const sp = rem.lastIndexOf(' ', maxLineChars);
+                  const cut = sp > Math.floor(maxLineChars * 0.5) ? sp : maxLineChars;
+                  lines.push(rem.slice(0, cut).trim());
+                  rem = rem.slice(cut).trim();
+                }
+                if (rem) lines.push(rem);
+                return lines;
+              })();
               const isMoving =
                 overlayDrag?.target === 'subtitle' && overlayDrag.mode === 'move';
               const isEditing = subtitleEditingIdx === matchedIdx && matchedIdx >= 0;
@@ -1076,7 +1065,9 @@ export function ClipEditorV2({
                       }}
                     />
                   ) : (
-                    text
+                    previewLines.map((ln, i) => (
+                      <div key={i}>{ln}</div>
+                    ))
                   )}
                   {!isEditing && (
                     <>

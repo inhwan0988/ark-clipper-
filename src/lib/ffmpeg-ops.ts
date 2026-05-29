@@ -174,14 +174,18 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
 
   // custom_background 입력 검증 — 파일이 실제 존재하고 확장자가 지원되는지 확인.
   // 미존재/미지원 시 letterbox로 fallback (사용자에게 부드러운 degrade).
-  const useCustomBg =
-    opts.layout === 'custom_background' &&
-    !!opts.customBackgroundPath &&
-    fs.existsSync(opts.customBackgroundPath);
+  // 진단 로그: layout / path 도달 여부를 항상 출력 → 회귀 발생 시 원인 추적 빠름.
+  console.log(
+    `[generateClip] layout=${opts.layout} customBgPath=${opts.customBackgroundPath ?? '(none)'}`,
+  );
+  const pathExists =
+    !!opts.customBackgroundPath && fs.existsSync(opts.customBackgroundPath);
+  const useCustomBg = opts.layout === 'custom_background' && pathExists;
   const bgKind = useCustomBg ? detectBackgroundKind(opts.customBackgroundPath!) : null;
   if (opts.layout === 'custom_background' && (!useCustomBg || !bgKind)) {
     console.warn(
-      `[generateClip] custom_background fallback → letterbox (path=${opts.customBackgroundPath}, exists=${useCustomBg}, kind=${bgKind})`,
+      `[generateClip] custom_background fallback → letterbox ` +
+        `(path=${opts.customBackgroundPath}, exists=${pathExists}, kind=${bgKind})`,
     );
   }
   const effectiveLayout: LayoutStyle =
