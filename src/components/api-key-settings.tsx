@@ -73,6 +73,8 @@ export function ApiKeySettings({ onChange }: Props) {
   const [draftKey, setDraftKey] = useState('');
   const [editing, setEditing] = useState(false);
   const [showFull, setShowFull] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
     const k = getStoredApiKey();
@@ -88,6 +90,30 @@ export function ApiKeySettings({ onChange }: Props) {
     setEditing(false);
     setShowFull(false);
     onChange?.(trimmed);
+  }
+
+  async function validate() {
+    const k = draftKey.trim();
+    if (!k) return;
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      const res = await fetch('/api/validate-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'anthropic', key: k }),
+      });
+      const data = await res.json();
+      setCheckResult(
+        data.ok
+          ? { ok: true, msg: '정상 작동하는 키입니다.' }
+          : { ok: false, msg: data.error || '키 확인 실패' },
+      );
+    } catch {
+      setCheckResult({ ok: false, msg: '네트워크 오류로 확인 실패' });
+    } finally {
+      setChecking(false);
+    }
   }
 
   function clear() {
@@ -193,6 +219,13 @@ export function ApiKeySettings({ onChange }: Props) {
                 🔗 Anthropic 콘솔에서 API 키 발급받기
               </a>
               <div className="flex gap-2">
+                <button
+                  onClick={validate}
+                  disabled={!draftKey.trim() || checking}
+                  className="px-3 py-1.5 bg-[#11203d] border border-[#243a5c] text-gray-300 rounded text-xs hover:bg-[#1a2d4d] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {checking ? '확인 중…' : '🔌 키 확인'}
+                </button>
                 {savedKey && (
                   <button
                     onClick={() => { setDraftKey(savedKey); setEditing(false); setShowFull(false); }}
@@ -210,6 +243,11 @@ export function ApiKeySettings({ onChange }: Props) {
                 </button>
               </div>
             </div>
+            {checkResult && (
+              <p className={`text-[11px] ${checkResult.ok ? 'text-green-400' : 'text-orange-400'}`}>
+                {checkResult.ok ? '✅ ' : '❌ '}{checkResult.msg}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -225,6 +263,8 @@ export function OpenAiKeySettings({ onChange }: Props) {
   const [draftKey, setDraftKey] = useState('');
   const [editing, setEditing] = useState(false);
   const [showFull, setShowFull] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
     const k = getStoredOpenAiKey();
@@ -240,6 +280,30 @@ export function OpenAiKeySettings({ onChange }: Props) {
     setEditing(false);
     setShowFull(false);
     onChange?.(trimmed);
+  }
+
+  async function validate() {
+    const k = draftKey.trim();
+    if (!k) return;
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      const res = await fetch('/api/validate-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'openai', key: k }),
+      });
+      const data = await res.json();
+      setCheckResult(
+        data.ok
+          ? { ok: true, msg: '정상 작동하는 키입니다.' }
+          : { ok: false, msg: data.error || '키 확인 실패' },
+      );
+    } catch {
+      setCheckResult({ ok: false, msg: '네트워크 오류로 확인 실패' });
+    } finally {
+      setChecking(false);
+    }
   }
 
   function clear() {
@@ -355,6 +419,13 @@ export function OpenAiKeySettings({ onChange }: Props) {
                 🔗 OpenAI 플랫폼에서 API 키 발급받기
               </a>
               <div className="flex gap-2">
+                <button
+                  onClick={validate}
+                  disabled={!draftKey.trim() || checking}
+                  className="px-3 py-1.5 bg-[#11203d] border border-[#243a5c] text-gray-300 rounded text-xs hover:bg-[#1a2d4d] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {checking ? '확인 중…' : '🔌 키 확인'}
+                </button>
                 {savedKey && (
                   <button
                     onClick={() => {
@@ -376,6 +447,11 @@ export function OpenAiKeySettings({ onChange }: Props) {
                 </button>
               </div>
             </div>
+            {checkResult && (
+              <p className={`text-[11px] ${checkResult.ok ? 'text-green-400' : 'text-orange-400'}`}>
+                {checkResult.ok ? '✅ ' : '❌ '}{checkResult.msg}
+              </p>
+            )}
           </div>
         )}
       </div>
