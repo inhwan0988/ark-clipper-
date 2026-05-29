@@ -811,41 +811,31 @@ export function ClipEditorV2({
                 onCustomizationChange({ ...customization, bgZoom: newZoom });
               }}
             />
-            {/* YouTube 쇼츠 안전영역 가이드 — 글씨가 쇼츠 UI에 안 가리는 영역 안내 */}
+            {/* 안전영역 가이드 — Premiere Pro 표준 safe margin (기기 독립적 퍼센트).
+                액션 세이프 90%(각 변 5%), 타이틀 세이프 80%(각 변 10%) + 중앙 십자. */}
             {showSafeZone && (
               <div className="pointer-events-none absolute inset-0 z-30">
-                {/* 하단 UI — 제목·채널·자막·음악 영역 (글씨 피하기) */}
+                {/* 액션 세이프 90% — 각 변 5% 여백 */}
                 <div
-                  className="absolute inset-x-0 bottom-0 bg-red-500/15 border-t-2 border-dashed border-red-400/70"
-                  style={{ height: '24%' }}
+                  className="absolute border border-white/60"
+                  style={{ top: '5%', left: '5%', right: '5%', bottom: '5%' }}
                 >
-                  <span className="absolute top-1 left-1 text-[9px] font-bold text-red-100 bg-black/70 px-1 py-0.5 rounded">
-                    하단 UI · 제목/채널/자막
+                  <span className="absolute -top-[15px] left-0 whitespace-nowrap text-[9px] font-bold text-white/85 bg-black/60 px-1 py-0.5 rounded">
+                    액션 세이프 90%
                   </span>
                 </div>
-                {/* 우측 버튼 — 좋아요·댓글·공유 (글씨 피하기) */}
+                {/* 타이틀 세이프 80% — 각 변 10% 여백 (글씨 권장 영역) */}
                 <div
-                  className="absolute top-0 bottom-0 right-0 bg-red-500/15 border-l-2 border-dashed border-red-400/70"
-                  style={{ width: '14%' }}
+                  className="absolute border-2 border-dashed border-emerald-400"
+                  style={{ top: '10%', left: '10%', right: '10%', bottom: '10%' }}
                 >
-                  <span className="absolute top-2 right-1 text-[9px] font-bold text-red-100 bg-black/70 px-1 py-0.5 rounded [writing-mode:vertical-rl]">
-                    버튼 UI
+                  <span className="absolute -top-[16px] left-0 whitespace-nowrap text-[10px] font-bold text-emerald-300 bg-black/75 px-1 py-0.5 rounded">
+                    타이틀 세이프 80% · 글씨 권장
                   </span>
                 </div>
-                {/* 상단 여백 */}
-                <div
-                  className="absolute inset-x-0 top-0 bg-red-500/10 border-b border-dashed border-red-400/40"
-                  style={{ height: '6%' }}
-                />
-                {/* 안전 영역 (이 안에 글씨를 넣으면 안 잘림) */}
-                <div
-                  className="absolute border-2 border-dashed border-emerald-400/90"
-                  style={{ top: '6%', left: '5%', right: '14%', bottom: '24%' }}
-                >
-                  <span className="absolute top-0.5 left-1 text-[10px] font-bold text-emerald-100 bg-black/70 px-1 py-0.5 rounded">
-                    ✓ 글씨 안전 영역
-                  </span>
-                </div>
+                {/* 중앙 십자선 */}
+                <div className="absolute left-1/2 top-1/2 w-4 h-px -translate-x-1/2 -translate-y-1/2 bg-white/50" />
+                <div className="absolute left-1/2 top-1/2 h-4 w-px -translate-x-1/2 -translate-y-1/2 bg-white/50" />
               </div>
             )}
             {/* 제목 오버레이 — 드래그 이동 / 코너 크기 / 좌우 너비 / 더블클릭 편집 */}
