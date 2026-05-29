@@ -221,9 +221,10 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
         `'0 - (${oy})*ih/1920'` +
         `,scale=${OUTPUT_W}:${OUTPUT_H}`;
     } else if (effectiveLayout === 'custom_background') {
-      // custom_background: 원본 영상을 1080 너비 기준 비율 유지 스케일 (letterbox와 동일).
-      // 이후 별도 bg input과 overlay (filter_complex)로 합성.
-      sourceVf = `scale=${OUTPUT_W}:-2:force_original_aspect_ratio=decrease`;
+      // custom_background: 원본 영상을 (1080 × zoom) 너비로 스케일 → overlay에서 offset으로 위치 조절.
+      // bgZoom/bgOffsetX/bgOffsetY를 "배경 위 원본 영상"의 크기·위치로 재사용 (미리보기와 동일).
+      const z = Math.max(1, opts.bgZoom ?? 1);
+      sourceVf = `scale=${Math.round(OUTPUT_W * z)}:-2:force_original_aspect_ratio=decrease`;
     } else {
       // letterbox: 1080 너비로 스케일 + 1080x1920 캔버스 패딩 (검정 배경)
       sourceVf = `scale=${OUTPUT_W}:-2:force_original_aspect_ratio=decrease,pad=${OUTPUT_W}:${OUTPUT_H}:0:${VIDEO_Y}:black`;
@@ -333,7 +334,10 @@ export async function generateClip(opts: ClipOptions): Promise<string> {
         `[0:v]scale=${OUTPUT_W}:${OUTPUT_H}:force_original_aspect_ratio=increase,crop=${OUTPUT_W}:${OUTPUT_H},setsar=1[bg]`;
       const fgChain = `[1:v]${sourceVf},setsar=1[fg]`;
       const overlayOut = canvasVf ? '[overlayed]' : '[outv]';
-      const overlayChain = `[bg][fg]overlay=(W-w)/2:${VIDEO_Y}${overlayOut}`;
+      // 원본 영상 위치 offset (bgOffsetX/Y 재사용) — 미리보기 translate와 동일 방향(+).
+      const ox = Math.round(opts.bgOffsetX ?? 0);
+      const oy = Math.round(opts.bgOffsetY ?? 0);
+      const overlayChain = `[bg][fg]overlay=(W-w)/2+(${ox}):${VIDEO_Y}+(${oy})${overlayOut}`;
       const tailChain = canvasVf ? `;[overlayed]${canvasVf}[outv]` : '';
       const filterComplex = `${bgChain};${fgChain};${overlayChain}${tailChain}`;
 

@@ -748,6 +748,15 @@ export function ClipEditorV2({
             ↩️ 취소
           </button>
           <button
+            onClick={() => {
+              if (confirm('편집한 내용을 모두 처음 상태로 초기화할까요?')) handleResetDraft();
+            }}
+            className="px-3 py-1.5 bg-[#1a2d4d] border border-[#243a5c] text-gray-400 rounded text-xs hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition"
+            title="편집한 내용 전체를 처음 상태로 초기화"
+          >
+            🗑 편집 초기화
+          </button>
+          <button
             onClick={handleSave}
             disabled={!isDirty}
             className="px-4 py-1.5 bg-[#1C4D8D] text-white rounded text-xs font-bold hover:bg-[#0F2854] disabled:opacity-40 disabled:cursor-not-allowed transition"
@@ -799,21 +808,27 @@ export function ClipEditorV2({
               style={{
                 objectFit: draftLayout === 'crop_vertical' ? 'cover' : 'contain',
                 transform:
-                  draftLayout === 'crop_vertical'
+                  draftLayout === 'crop_vertical' ||
+                  draftLayout === 'custom_background'
                     ? `scale(${customization.bgZoom}) translate(${
                         (customization.bgOffsetX / 1080) * 100
                       }%, ${(customization.bgOffsetY / 1920) * 100}%)`
                     : undefined,
                 transformOrigin: 'center center',
                 cursor:
-                  draftLayout === 'crop_vertical' && !overlayDrag
+                  (draftLayout === 'crop_vertical' ||
+                    draftLayout === 'custom_background') && !overlayDrag
                     ? bgDrag
                       ? 'grabbing'
                       : 'grab'
                     : 'default',
               }}
               onMouseDown={(e) => {
-                if (draftLayout !== 'crop_vertical') return;
+                if (
+                  draftLayout !== 'crop_vertical' &&
+                  draftLayout !== 'custom_background'
+                )
+                  return;
                 if (!previewBoxRef.current) return;
                 e.preventDefault();
                 const rect = previewBoxRef.current.getBoundingClientRect();
@@ -827,7 +842,11 @@ export function ClipEditorV2({
                 });
               }}
               onWheel={(e) => {
-                if (draftLayout !== 'crop_vertical') return;
+                if (
+                  draftLayout !== 'crop_vertical' &&
+                  draftLayout !== 'custom_background'
+                )
+                  return;
                 e.preventDefault();
                 const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
                 const newZoom = Math.max(
@@ -1950,13 +1969,16 @@ function LayoutPanel({
         </div>
       )}
 
-      {/* 세로 크롭 모드에서만 — 배경 영상 zoom/pan */}
-      {draftLayout === 'crop_vertical' && (
+      {/* 세로 크롭 / 커스텀 배경 — zoom/pan (custom_background는 배경 위 원본 영상 위치 조절) */}
+      {(draftLayout === 'crop_vertical' ||
+        draftLayout === 'custom_background') && (
         <div className="space-y-2.5 pt-2 border-t border-[#243a5c]">
           <div className="text-[11px] text-gray-500 -mb-1">
-            영상 화면에서 직접 드래그(이동) / 휠(확대)로도 조정 가능
+            {draftLayout === 'custom_background'
+              ? '배경 위 원본 영상 위치/크기 — 화면에서 드래그(이동)/휠(확대)로도 조정'
+              : '영상 화면에서 직접 드래그(이동) / 휠(확대)로도 조정 가능'}
           </div>
-          <Row label="배경 줌">
+          <Row label="줌">
             <NumberStepper
               value={Math.round(customization.bgZoom * 100)}
               onChange={(v) => updateCust({ bgZoom: Math.max(100, Math.min(500, v)) / 100 })}
@@ -1987,7 +2009,7 @@ function LayoutPanel({
             onClick={() => updateCust({ bgZoom: 1, bgOffsetX: 0, bgOffsetY: 0 })}
             className="w-full px-3 py-1.5 bg-[#1a2d4d] border border-[#243a5c] text-gray-300 rounded text-xs hover:bg-[#243a5c] transition"
           >
-            🔄 배경 위치 초기화
+            🔄 위치 초기화
           </button>
         </div>
       )}
