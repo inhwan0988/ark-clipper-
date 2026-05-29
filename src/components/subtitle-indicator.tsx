@@ -7,13 +7,13 @@ const OUTPUT_H = 1920;
 /**
  * 폰트 크기에 맞춰 한 줄에 들어가는 최대 글자 수 자동 계산.
  * 한글은 전각(fullwidth)이라 fontSize와 거의 같은 너비를 차지함.
- * 안전 마진 포함:
+ * 안전 마진 포함 (서버 subtitle-gen과 동일하게 유지):
  *  - 글자 너비: fontSize × 1.0 (한글 전각 기준)
- *  - 가용 너비: 1080 × 0.88 (좌우 6% 여백)
+ *  - 가용 너비: 1080 × 0.80 (타이틀 세이프 = 좌우 10% 여백) → safe zone 안에 들어옴
  */
 export function maxCharsForFontSize(fontSize: number): number {
   const charWidth = fontSize * 1.0;
-  const safeWidth = 1080 * 0.88;
+  const safeWidth = 1080 * 0.8;
   return Math.max(4, Math.floor(safeWidth / charWidth));
 }
 

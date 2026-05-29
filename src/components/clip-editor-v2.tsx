@@ -5,6 +5,7 @@ import type { ClipCustomization } from './clip-customizer';
 import type { Transcript } from '@/types';
 import { getStoredApiKey } from './api-key-settings';
 import { splitTitleLines, maxUnitsForBox, osAwareCssFontFamily } from '@/lib/title-wrap';
+import { maxCharsForFontSize, smartSplitKoreanSubtitle } from './subtitle-indicator';
 
 interface Props {
   videoSrc: string;
@@ -739,11 +740,21 @@ export function ClipEditorV2({
             </button>
           )}
           <button
-            onClick={handleResetDraft}
-            disabled={!isDirty}
+            onClick={undo}
+            disabled={history.length === 0}
             className="px-3 py-1.5 bg-[#1a2d4d] border border-[#243a5c] text-gray-400 rounded text-xs hover:bg-[#243a5c] disabled:opacity-40 disabled:cursor-not-allowed transition"
+            title="바로 직전 단계로 되돌리기 (한 단계씩 취소, Cmd/Ctrl+Z)"
           >
             ↩️ 취소
+          </button>
+          <button
+            onClick={() => {
+              if (confirm('편집한 내용을 모두 처음 상태로 초기화할까요?')) handleResetDraft();
+            }}
+            className="px-3 py-1.5 bg-[#1a2d4d] border border-[#243a5c] text-gray-400 rounded text-xs hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition"
+            title="편집한 내용 전체를 처음 상태로 초기화"
+          >
+            🗑 편집 초기화
           </button>
           <button
             onClick={handleSave}
@@ -765,29 +776,65 @@ export function ClipEditorV2({
             style={{ containerType: 'size' } as React.CSSProperties}
             title="실제 출력되는 9:16 쇼츠 영역"
           >
+            {/* custom_background 미리보기 — 업로드한 배경을 영상 뒤에 표시 (출력과 동일) */}
+            {draftLayout === 'custom_background' &&
+              customization.customBackgroundPath &&
+              projectId &&
+              (/(\.mp4|\.mov|\.webm|\.mkv)$/i.test(
+                customization.customBackgroundPath,
+              ) ? (
+                <video
+                  key={customization.customBackgroundPath}
+                  src={`/api/projects/background?projectId=${projectId}`}
+                  className="absolute inset-0 w-full h-full object-cover"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                />
+              ) : (
+                <img
+                  key={customization.customBackgroundPath}
+                  src={`/api/projects/background?projectId=${projectId}`}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              ))}
             <video
               ref={videoRef}
               src={videoSrc}
               preload="metadata"
-              className="absolute inset-0 w-full h-full bg-black"
+              className="absolute inset-0 w-full h-full"
               style={{
+                backgroundColor:
+                  draftLayout === 'custom_background'
+                    ? 'transparent'
+                    : draftLayout === 'crop_vertical'
+                      ? '#000'
+                      : `#${customization.backgroundColor ?? '000000'}`,
                 objectFit: draftLayout === 'crop_vertical' ? 'cover' : 'contain',
                 transform:
-                  draftLayout === 'crop_vertical'
+                  draftLayout === 'crop_vertical' ||
+                  draftLayout === 'custom_background'
                     ? `scale(${customization.bgZoom}) translate(${
                         (customization.bgOffsetX / 1080) * 100
                       }%, ${(customization.bgOffsetY / 1920) * 100}%)`
                     : undefined,
                 transformOrigin: 'center center',
                 cursor:
-                  draftLayout === 'crop_vertical' && !overlayDrag
+                  (draftLayout === 'crop_vertical' ||
+                    draftLayout === 'custom_background') && !overlayDrag
                     ? bgDrag
                       ? 'grabbing'
                       : 'grab'
                     : 'default',
               }}
               onMouseDown={(e) => {
-                if (draftLayout !== 'crop_vertical') return;
+                if (
+                  draftLayout !== 'crop_vertical' &&
+                  draftLayout !== 'custom_background'
+                )
+                  return;
                 if (!previewBoxRef.current) return;
                 e.preventDefault();
                 const rect = previewBoxRef.current.getBoundingClientRect();
@@ -801,7 +848,11 @@ export function ClipEditorV2({
                 });
               }}
               onWheel={(e) => {
-                if (draftLayout !== 'crop_vertical') return;
+                if (
+                  draftLayout !== 'crop_vertical' &&
+                  draftLayout !== 'custom_background'
+                )
+                  return;
                 e.preventDefault();
                 const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
                 const newZoom = Math.max(
@@ -1002,25 +1053,34 @@ export function ClipEditorV2({
               const text =
                 seg?.text || inClipSeg?.text || nearestSeg?.text || '예시 자막';
               if (!text) return null;
-              // 미리보기 줄바꿈 — 사용자가 슬라이더로 정한 maxCharsPerLine을 즉시 반영.
+              // 미리보기 줄바꿈 — 폰트 크기 + 안전영역(80%) 기준 자동 (출력 subtitle-gen과 동일).
               // 어절(공백) 우선, 없으면 maxChars에서 강제 절단.
               const maxLineChars = Math.max(
                 4,
-                customization.subtitleMaxCharsPerLine ?? 13,
+                maxCharsForFontSize(customization.subtitleFontSize),
               );
-              const previewLines: string[] = (() => {
-                const t = text.trim().replace(/\s+/g, ' ');
-                if (t.length <= maxLineChars) return [t];
-                const lines: string[] = [];
-                let rem = t;
-                while (rem.length > maxLineChars) {
-                  const sp = rem.lastIndexOf(' ', maxLineChars);
-                  const cut = sp > Math.floor(maxLineChars * 0.5) ? sp : maxLineChars;
-                  lines.push(rem.slice(0, cut).trim());
-                  rem = rem.slice(cut).trim();
+              // 단어/문맥 보존 분할 (출력 subtitle-gen과 동일 방식 — 단어 중간 안 잘림).
+              const previewLines: string[] = smartSplitKoreanSubtitle(text, maxLineChars);
+              // 현재 재생 시점에 해당하는 한 줄만 표시 (출력처럼 한 줄씩 순차, 쌓지 않음).
+              const activeLineIdx: number = (() => {
+                if (previewLines.length <= 1 || !seg) return 0;
+                const segDur = seg.end - seg.start;
+                if (segDur <= 0) return 0;
+                const totalChars = previewLines.reduce(
+                  (s, l) => s + Math.max(1, l.length),
+                  0,
+                );
+                let cursor = seg.start;
+                for (let i = 0; i < previewLines.length; i++) {
+                  const portion = Math.max(1, previewLines[i].length) / totalChars;
+                  const lineEnd =
+                    i === previewLines.length - 1
+                      ? seg.end
+                      : cursor + segDur * portion;
+                  if (currentTime < lineEnd) return i;
+                  cursor = lineEnd;
                 }
-                if (rem) lines.push(rem);
-                return lines;
+                return previewLines.length - 1;
               })();
               const isMoving =
                 overlayDrag?.target === 'subtitle' && overlayDrag.mode === 'move';
@@ -1094,9 +1154,7 @@ export function ClipEditorV2({
                       }}
                     />
                   ) : (
-                    previewLines.map((ln, i) => (
-                      <div key={i}>{ln}</div>
-                    ))
+                    <div>{previewLines[activeLineIdx] ?? previewLines[0]}</div>
                   )}
                   {!isEditing && (
                     <>
@@ -1880,6 +1938,32 @@ function LayoutPanel({
         </div>
       </Field>
 
+      {/* 레터박스 배경색 (여백 색 지정) */}
+      {draftLayout === 'letterbox' && (
+        <div className="flex items-center gap-2 pt-2 border-t border-[#243a5c]">
+          <span className="text-[11px] text-gray-400">배경색 (여백)</span>
+          <input
+            type="color"
+            value={`#${customization.backgroundColor ?? '000000'}`}
+            onChange={(e) =>
+              updateCust({ backgroundColor: e.target.value.replace(/^#/, '') })
+            }
+            className="w-8 h-7 rounded cursor-pointer bg-transparent border border-[#243a5c]"
+          />
+          <span className="text-[10px] text-gray-500 font-mono">
+            #{customization.backgroundColor ?? '000000'}
+          </span>
+          {(customization.backgroundColor ?? '000000') !== '000000' && (
+            <button
+              onClick={() => updateCust({ backgroundColor: '000000' })}
+              className="text-[10px] text-gray-500 hover:text-gray-300 underline"
+            >
+              검정으로
+            </button>
+          )}
+        </div>
+      )}
+
       {/* custom_background 모드에서만 — 배경 파일 picker */}
       {draftLayout === 'custom_background' && (
         <div className="space-y-2.5 pt-2 border-t border-[#243a5c]">
@@ -1917,13 +2001,16 @@ function LayoutPanel({
         </div>
       )}
 
-      {/* 세로 크롭 모드에서만 — 배경 영상 zoom/pan */}
-      {draftLayout === 'crop_vertical' && (
+      {/* 세로 크롭 / 커스텀 배경 — zoom/pan (custom_background는 배경 위 원본 영상 위치 조절) */}
+      {(draftLayout === 'crop_vertical' ||
+        draftLayout === 'custom_background') && (
         <div className="space-y-2.5 pt-2 border-t border-[#243a5c]">
           <div className="text-[11px] text-gray-500 -mb-1">
-            영상 화면에서 직접 드래그(이동) / 휠(확대)로도 조정 가능
+            {draftLayout === 'custom_background'
+              ? '배경 위 원본 영상 위치/크기 — 화면에서 드래그(이동)/휠(확대)로도 조정'
+              : '영상 화면에서 직접 드래그(이동) / 휠(확대)로도 조정 가능'}
           </div>
-          <Row label="배경 줌">
+          <Row label="줌">
             <NumberStepper
               value={Math.round(customization.bgZoom * 100)}
               onChange={(v) => updateCust({ bgZoom: Math.max(100, Math.min(500, v)) / 100 })}
@@ -1954,7 +2041,7 @@ function LayoutPanel({
             onClick={() => updateCust({ bgZoom: 1, bgOffsetX: 0, bgOffsetY: 0 })}
             className="w-full px-3 py-1.5 bg-[#1a2d4d] border border-[#243a5c] text-gray-300 rounded text-xs hover:bg-[#243a5c] transition"
           >
-            🔄 배경 위치 초기화
+            🔄 위치 초기화
           </button>
         </div>
       )}
@@ -2004,18 +2091,10 @@ function SubtitlePanel({
             </div>
           </Row>
           <Row label="줄 길이">
-            <div className="flex items-center gap-2">
-              <NumberStepper
-                value={customization.subtitleMaxCharsPerLine ?? 13}
-                onChange={(v) => updateCust({ subtitleMaxCharsPerLine: v })}
-                min={4}
-                max={40}
-                step={1}
-              />
-              <span className="text-[10px] text-gray-500">
-                자/줄 (한 줄 최대 글자 수)
-              </span>
-            </div>
+            <span className="text-[11px] text-gray-400">
+              한 줄 {maxCharsForFontSize(customization.subtitleFontSize)}자 · 폰트
+              크기·안전영역(80%)에 자동 맞춤
+            </span>
           </Row>
           <Row label="정렬">
             <div className="flex gap-1">

@@ -34,6 +34,8 @@ const DEFAULT_CUSTOMIZATION: ClipCustomization = {
   bgZoom: 1,
   bgOffsetX: 0,
   bgOffsetY: 0,
+  // 레터박스 여백 배경색 (기본 검정)
+  backgroundColor: '000000',
 
   // 하단 채널명
   channelEnabled: true,
