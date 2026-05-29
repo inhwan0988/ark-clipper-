@@ -168,11 +168,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
 }
 
-// 폰트 크기에 따른 한 줄 최대 글자 수
-// 한글은 전각(fullwidth)이라 fontSize × 1.0 픽셀 너비 차지. 가용 너비 88%.
+// 폰트 크기에 따른 한 줄 최대 글자 수.
+// 한글은 전각(fullwidth)이라 fontSize × 1.0 픽셀 너비 차지.
+// 가용 너비 = 타이틀 세이프 80% (1080의 좌우 10% 여백) → 자막이 safe zone 안에 들어옴.
 function maxCharsForFontSize(fontSize: number): number {
   const charWidth = fontSize * 1.0;
-  const safeWidth = 1080 * 0.88;
+  const safeWidth = 1080 * 0.8;
   return Math.max(4, Math.floor(safeWidth / charWidth));
 }
 const KOREAN_2CHAR_PARTICLES = ['으로', '에서', '에게', '한테', '부터', '까지', '이나', '거나', '면서', '에는', '에도', '에만'];
@@ -320,9 +321,10 @@ export function generateSubtitleFile(
 
   let events = '';
 
-  // 말자막: 한 줄씩 순차 표시 (사용자 지정 maxCharsPerLine 우선, 없으면 fontSize 기반 자동)
+  // 말자막: 한 줄씩 순차 표시. 줄당 글자 수는 폰트 크기 + 안전영역(80%) 기준 자동 계산
+  // → 폰트 크기를 바꾸면 자동으로 글자 수가 safe zone에 맞게 조정됨.
   if (subtitle && transcript) {
-    const dynMax = subtitle.maxCharsPerLine ?? maxCharsForFontSize(subtitle.fontSize);
+    const dynMax = maxCharsForFontSize(subtitle.fontSize);
     const relevantSegments = transcript.segments.filter(
       (seg) => seg.end > startTime && seg.start < endTime
     );
